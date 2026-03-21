@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>ミニ・テラリア風ゲーム</title>
+    <style>
+        body {
+            text-align: center;
+            background-color: #2c3e50;
+            color: white;
+            font-family: sans-serif;
+        }
+        canvas {
+            background-color: #87CEEB; /* 空の色 */
+            border: 4px solid #34495e;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            cursor: crosshair;
+        }
+        .controls {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ミニ・テラリア風プロトタイプ</h1>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    
+    <div class="controls">
+        <p><strong>【操作方法】</strong> 
+        A / D キー：左右移動 ｜ W キー：ジャンプ ｜ マウス左クリック：ブロックを壊す</p>
+    </div>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const TILE_SIZE = 40;
+    const COLS = canvas.width / TILE_SIZE;
+    const ROWS = canvas.height / TILE_SIZE;
+
+    // キー入力の管理
+    const keys = { a: false, d: false, w: false };
+    window.addEventListener("keydown", (e) => {
+        if (e.key === "a" || e.key === "A") keys.a = true;
+        if (e.key === "d" || e.key === "D") keys.d = true;
+        if (e.key === "w" || e.key === "W") keys.w = true;
+    });
+    window.addEventListener("keyup", (e) => {
+        if (e.key === "a" || e.key === "A") keys.a = false;
+        if (e.key === "d" || e.key === "D") keys.d = false;
+        if (e.key === "w" || e.key === "W") keys.w = false;
+    });
+
+    // マウスクリックでブロックを壊す
+    canvas.addEventListener("mousedown", (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        const col = Math.floor(mouseX / TILE_SIZE);
+        const row = Math.floor(mouseY / TILE_SIZE);
+
+        // 範囲内ならブロックを消す（0にする）
+        if (row >= 0 && row < ROWS && col >= 0 && col < COLS) {
+            world[row][col] = 0;
+        }
+    });
+
+    // ワールドマップの生成 (0:空, 1:草, 2:土)
+    const world = [];
+    for (let r = 0; r < Math.floor(ROWS); r++) {
+        let row = [];
+        for (let c = 0; c < Math.floor(COLS); c++) {
+            if (r < 8) row.push(0); // 上のほうは空
+            else if (r === 8) row.push(1); // 地表は草ブロック
+            else row.push(2); // 地下は土ブロック
+        }
+        world.push(row);
+    }
+
+    // プレイヤーの設定
+    const player = {
+        x: 400, y: 100,
+        width: 30, height: 40,
+        vx: 0, vy: 0,
+        speed: 4,
+        jumpPower: -10,
+        gravity: 0.5,
+        grounded: false
+    };
+
+    // 衝突判定ヘルパー
+    function getTile(x, y) {
+        const col = Math.floor(x / TILE_SIZE);
+        const row = Math.floor(y / TILE_SIZE);
+        if (row >= 0 && row < ROWS && col >= 0 && col < COLS) {
+            return world[row][col];
+        }
+        return 0; // 画面外は空扱い
+    }
+
+    // ゲームループ
+    function update() {
+        // 左右移動
+        if (keys.a) player.vx = -player.speed;
+        else if (keys.d) player.vx = player.speed;
+        else player.vx = 0;
+
+        // ジャンプ
+        if (keys.w && player.grounded) {
+            player.vy = player.jumpPower;
+            player.grounded = false;
+        }
+
+        // 重力の適用
+        player.vy += player.gravity;
+
+        // X軸の移動と衝突判定
+        player.x += player.vx;
+        if (player.vx > 0) { // 右へ移動中
+            if (getTile(player.x + player.width, player.y) !== 0 || 
+                getTile(player.x + player.width, player.y + player.height - 1) !== 0) {
+                player.x = Math.floor((player.x + player.width) / TILE_SIZE) * TILE_SIZE - player.width;
+            }
+        } else if (player.vx < 0) { // 左へ移動中
+            if (getTile(player.x, player.y) !== 0 || 
+                getTile(player.x, player.y + player.height - 1) !== 0) {
+                player.x = Math.floor(player.x / TILE_SIZE) * TILE_SIZE + TILE_SIZE;
+            }
+        }
+
+        // Y軸の移動と衝突判定
+        player.y += player.vy;
+        player.grounded = false;
+        if (player.vy > 0) { // 落下中
+            if (getTile(player.x, player.y + player.height) !== 0 || 
+                getTile(player.x + player.width - 1, player.y + player.height) !== 0) {
+                player.y = Math.floor((player.y + player.height) / TILE_SIZE) * TILE_SIZE - player.height;
+                player.vy = 0;
+                player.grounded = true;
+            }
+        } else if (player.vy < 0) { // 上昇中
+            if (getTile(player.x, player.y) !== 0 || 
+                getTile(player.x + player.width - 1, player.y) !== 0) {
+                player.y = Math.floor(player.y / TILE_SIZE) * TILE_SIZE + TILE_SIZE;
+                player.vy = 0;
+            }
+        }
+
+        // 画面外に出ないようにする
+        if (player.x < 0) player.x = 0;
+        if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+        if (player.y > canvas.height) { // 落ちたら上からリスポーン
+            player.y = 0;
+            player.vy = 0;
+        }
+    }
+
+    function draw() {
+        // 背景クリア
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // マップの描画
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const tile = world[r][c];
+                if (tile !== 0) {
+                    if (tile === 1) ctx.fillStyle = "#2ecc71"; // 草
+                    else if (tile === 2) ctx.fillStyle = "#8e44ad"; // 土（少し紫がかった色）
+                    
+                    ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    ctx.strokeStyle = "rgba(0,0,0,0.2)"; // ブロックの境界線
+                    ctx.strokeRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                }
+            }
+        }
+
+        // プレイヤーの描画
+        ctx.fillStyle = "#e74c3c"; // 赤いキャラクター
+        ctx.fillRect(player.x, player.y, player.width, player.height);
+    }
+
+    function loop() {
+        update();
+        draw();
+        requestAnimationFrame(loop);
+    }
+
+    // ゲーム開始
+    loop();
+</script>
+</body>
+</html>

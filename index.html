@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>ミニ・テラリア風ゲーム v2</title>
+    <title>ミニ・テラリア風ゲーム v3 (スクロール対応)</title>
     <style>
         body {
             text-align: center;
@@ -28,7 +28,7 @@
 </head>
 <body>
 
-    <h1>ミニ・テラリア風プロトタイプ v2</h1>
+    <h1>ミニ・テラリア風プロトタイプ v3</h1>
     <canvas id="gameCanvas" width="800" height="600"></canvas>
     
     <div class="controls">
@@ -45,18 +45,21 @@
     const ctx = canvas.getContext("2d");
 
     const TILE_SIZE = 40;
-    const COLS = canvas.width / TILE_SIZE;
-    const ROWS = canvas.height / TILE_SIZE;
-    const REACH = TILE_SIZE * 5; // 手が届く距離（5ブロック分）
+    // ワールド全体の広さ（画面よりずっと大きい）
+    const WORLD_COLS = 100; // 横に100マス (4000ピクセル)
+    const WORLD_ROWS = 30;  // 縦に30マス (1200ピクセル)
+    const REACH = TILE_SIZE * 5;
 
-    // インベントリと選択中のブロック
-    const inventory = { 1: 0, 2: 0 }; // 1:草, 2:土
+    const inventory = { 1: 0, 2: 0 };
     let selectedBlock = 1;
-
-    // キー入力とマウスの管理
     const keys = { a: false, d: false, w: false };
-    let mouseX = 0, mouseY = 0;
-    let targetTile = null; // 現在狙っているタイルの情報
+    
+    // マウス座標（画面上の純粋な位置）
+    let rawMouseX = 0, rawMouseY = 0;
+    let targetTile = null;
+
+    // カメラ（画面に映す範囲）
+    const camera = { x: 0, y: 0 };
 
     window.addEventListener("keydown", (e) => {
         if (e.key === "a" || e.key === "A") keys.a = true;
@@ -71,67 +74,65 @@
         if (e.key === "w" || e.key === "W") keys.w = false;
     });
 
-    // マウス位置の追跡
     canvas.addEventListener("mousemove", (e) => {
         const rect = canvas.getBoundingClientRect();
-        mouseX = e.clientX - rect.left;
-        mouseY = e.clientY - rect.top;
+        rawMouseX = e.clientX - rect.left;
+        rawMouseY = e.clientY - rect.top;
     });
 
-    // 右クリックメニューを禁止
     canvas.addEventListener("contextmenu", e => e.preventDefault());
 
-    // クリックで破壊と設置
     canvas.addEventListener("mousedown", (e) => {
         if (!targetTile) return;
 
         if (e.button === 0) { 
-            // 左クリック：破壊
             if (targetTile.isBlock) {
                 const blockType = world[targetTile.row][targetTile.col];
-                inventory[blockType]++; // インベントリに追加
-                world[targetTile.row][targetTile.col] = 0; // 空にする
+                inventory[blockType]++;
+                world[targetTile.row][targetTile.col] = 0;
             }
         } else if (e.button === 2) { 
-            // 右クリック：設置
             if (!targetTile.isBlock && inventory[selectedBlock] > 0) {
-                // プレイヤーの位置と重ならないかチェック
                 if (!isCollidingWithPlayer(targetTile.col, targetTile.row)) {
-                    inventory[selectedBlock]--; // 消費
-                    world[targetTile.row][targetTile.col] = selectedBlock; // 設置
+                    inventory[selectedBlock]--;
+                    world[targetTile.row][targetTile.col] = selectedBlock;
                 }
             }
         }
     });
 
-    // ワールドマップの生成
+    // 自然な起伏のあるワールドを生成
     const world = [];
-    for (let r = 0; r < Math.floor(ROWS); r++) {
+    for (let r = 0; r < WORLD_ROWS; r++) {
         let row = [];
-        for (let c = 0; c < Math.floor(COLS); c++) {
-            if (r < 8) row.push(0);
-            else if (r === 8) row.push(1);
-            else row.push(2);
+        for (let c = 0; c < WORLD_COLS; c++) {
+            // 列ごとに地面の高さ（波）を計算
+            let surfaceLevel = 10 + Math.floor(Math.sin(c * 0.15) * 3);
+            
+            if (r < surfaceLevel) row.push(0); // 空
+            else if (r === surfaceLevel) row.push(1); // 草
+            else row.push(2); // 土
         }
         world.push(row);
     }
 
+    // プレイヤーの初期位置をワールドの中央付近へ
     const player = {
-        x: 400, y: 100,
+        x: (WORLD_COLS * TILE_SIZE) / 2, 
+        y: 0,
         width: 30, height: 40,
         vx: 0, vy: 0,
-        speed: 4, jumpPower: -10, gravity: 0.5,
+        speed: 5, jumpPower: -11, gravity: 0.6,
         grounded: false
     };
 
     function getTile(x, y) {
         const col = Math.floor(x / TILE_SIZE);
         const row = Math.floor(y / TILE_SIZE);
-        if (row >= 0 && row < ROWS && col >= 0 && col < COLS) return world[row][col];
+        if (row >= 0 && row < WORLD_ROWS && col >= 0 && col < WORLD_COLS) return world[row][col];
         return 0;
     }
 
-    // プレイヤーと指定したマスが重なっているか判定
     function isCollidingWithPlayer(col, row) {
         const tx = col * TILE_SIZE;
         const ty = row * TILE_SIZE;
@@ -141,19 +142,21 @@
                 player.y + player.height > ty);
     }
 
-    // 視線判定（レイキャスト）でターゲットマスを決定
     function updateTargetTile() {
         targetTile = null;
+        // マウスの絶対座標（カメラ位置 + 画面上のマウス位置）
+        const absoluteMouseX = rawMouseX + camera.x;
+        const absoluteMouseY = rawMouseY + camera.y;
+
         const px = player.x + player.width / 2;
         const py = player.y + player.height / 2;
         
-        const dx = mouseX - px;
-        const dy = mouseY - py;
+        const dx = absoluteMouseX - px;
+        const dy = absoluteMouseY - py;
         const dist = Math.sqrt(dx*dx + dy*dy);
         
-        if (dist > REACH) return; // 届かない距離
+        if (dist > REACH) return; 
 
-        // プレイヤーの中心からマウスに向けて少しずつ進みながらチェック
         const steps = dist / 2; 
         const stepX = dx / steps;
         const stepY = dy / steps;
@@ -165,9 +168,8 @@
             const col = Math.floor(cx / TILE_SIZE);
             const row = Math.floor(cy / TILE_SIZE);
             
-            if (row >= 0 && row < ROWS && col >= 0 && col < COLS) {
+            if (row >= 0 && row < WORLD_ROWS && col >= 0 && col < WORLD_COLS) {
                 if (world[row][col] !== 0) {
-                    // 障害物（ブロック）にぶつかったらそこがターゲット
                     targetTile = { col: col, row: row, isBlock: true };
                     return;
                 }
@@ -176,10 +178,9 @@
             cy += stepY;
         }
         
-        // 障害物がなくマウス位置に到達した場合（設置用）
-        const mCol = Math.floor(mouseX / TILE_SIZE);
-        const mRow = Math.floor(mouseY / TILE_SIZE);
-        if (mRow >= 0 && mRow < ROWS && mCol >= 0 && mCol < COLS) {
+        const mCol = Math.floor(absoluteMouseX / TILE_SIZE);
+        const mRow = Math.floor(absoluteMouseY / TILE_SIZE);
+        if (mRow >= 0 && mRow < WORLD_ROWS && mCol >= 0 && mCol < WORLD_COLS) {
             targetTile = { col: mCol, row: mRow, isBlock: false };
         }
     }
@@ -222,24 +223,44 @@
             }
         }
 
+        // ワールドの端から落ちないように制限
         if (player.x < 0) player.x = 0;
-        if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
-        if (player.y > canvas.height) { player.y = 0; player.vy = 0; }
+        if (player.x + player.width > WORLD_COLS * TILE_SIZE) player.x = WORLD_COLS * TILE_SIZE - player.width;
+        if (player.y > WORLD_ROWS * TILE_SIZE) { // ワールドの底に落ちたら空からリスポーン
+            player.y = 0; 
+            player.vy = 0; 
+        }
 
-        // マウスのターゲットを更新
+        // カメラの更新（プレイヤーを中心に）
+        camera.x = player.x + player.width / 2 - canvas.width / 2;
+        camera.y = player.y + player.height / 2 - canvas.height / 2;
+
+        // カメラがワールド外にはみ出さないように制御
+        camera.x = Math.max(0, Math.min(camera.x, WORLD_COLS * TILE_SIZE - canvas.width));
+        camera.y = Math.max(0, Math.min(camera.y, WORLD_ROWS * TILE_SIZE - canvas.height));
+
         updateTargetTile();
     }
 
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // マップ描画
-        for (let r = 0; r < ROWS; r++) {
-            for (let c = 0; c < COLS; c++) {
+        // カメラのスクロールを適用して描画
+        ctx.save();
+        ctx.translate(-camera.x, -camera.y);
+
+        // 画面に映っている範囲だけを描画（最適化）
+        const startCol = Math.max(0, Math.floor(camera.x / TILE_SIZE));
+        const endCol = Math.min(WORLD_COLS, startCol + Math.ceil(canvas.width / TILE_SIZE) + 1);
+        const startRow = Math.max(0, Math.floor(camera.y / TILE_SIZE));
+        const endRow = Math.min(WORLD_ROWS, startRow + Math.ceil(canvas.height / TILE_SIZE) + 1);
+
+        for (let r = startRow; r < endRow; r++) {
+            for (let c = startCol; c < endCol; c++) {
                 const tile = world[r][c];
                 if (tile !== 0) {
-                    if (tile === 1) ctx.fillStyle = "#2ecc71"; // 草
-                    else if (tile === 2) ctx.fillStyle = "#8e44ad"; // 土
+                    if (tile === 1) ctx.fillStyle = "#2ecc71";
+                    else if (tile === 2) ctx.fillStyle = "#8e44ad";
                     
                     ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                     ctx.strokeStyle = "rgba(0,0,0,0.2)";
@@ -248,19 +269,20 @@
             }
         }
 
-        // ターゲットのハイライト
         if (targetTile) {
-            ctx.strokeStyle = "rgba(255, 255, 0, 0.9)"; // 黄色
+            ctx.strokeStyle = "rgba(255, 255, 0, 0.9)";
             ctx.lineWidth = 3;
             ctx.strokeRect(targetTile.col * TILE_SIZE, targetTile.row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-            ctx.lineWidth = 1; // 元に戻す
+            ctx.lineWidth = 1;
         }
 
-        // プレイヤー描画
         ctx.fillStyle = "#e74c3c";
         ctx.fillRect(player.x, player.y, player.width, player.height);
 
-        // インベントリUIの描画
+        // スクロールの影響をリセット（UIは画面に固定するため）
+        ctx.restore();
+
+        // UIの描画
         ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
         ctx.fillRect(10, 10, 130, 80);
         
@@ -269,8 +291,7 @@
         ctx.fillText(`[1] 草: ${inventory[1]} 個`, 20, 35);
         ctx.fillText(`[2] 土: ${inventory[2]} 個`, 20, 65);
 
-        // 選択中ブロックの枠線
-        ctx.strokeStyle = "#f1c40f"; // ゴールド
+        ctx.strokeStyle = "#f1c40f";
         ctx.lineWidth = 2;
         if (selectedBlock === 1) ctx.strokeRect(15, 18, 120, 24);
         if (selectedBlock === 2) ctx.strokeRect(15, 48, 120, 24);

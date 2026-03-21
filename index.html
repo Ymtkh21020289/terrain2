@@ -2,16 +2,18 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>ミニ・テラリア風ゲーム v3 (スクロール対応)</title>
+    <title>ミニ・テラリア風ゲーム v4 (照明＆クラフト)</title>
     <style>
         body {
             text-align: center;
             background-color: #2c3e50;
             color: white;
             font-family: sans-serif;
+            margin: 0;
+            padding: 10px;
         }
         canvas {
-            background-color: #87CEEB;
+            background-color: #87CEEB; /* 空の色 */
             border: 4px solid #34495e;
             box-shadow: 0 0 10px rgba(0,0,0,0.5);
             cursor: crosshair;
@@ -23,21 +25,22 @@
             background-color: #34495e;
             padding: 10px 20px;
             border-radius: 8px;
+            font-size: 14px;
         }
+        .highlight { color: #f1c40f; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <h1>ミニ・テラリア風プロトタイプ v3</h1>
+    <h1>ミニ・テラリア風プロトタイプ v4</h1>
     <canvas id="gameCanvas" width="800" height="600"></canvas>
     
     <div class="controls">
         <strong>【操作方法】</strong><br>
-        * 移動： <code>A</code> / <code>D</code> キー<br>
-        * ジャンプ： <code>W</code> キー<br>
-        * ブロック選択： <code>1</code> キー (草) / <code>2</code> キー (土)<br>
-        * 破壊： マウス <b>左クリック</b><br>
-        * 設置： マウス <b>右クリック</b>
+        * 移動： <code>A</code> / <code>D</code>　ジャンプ： <code>W</code><br>
+        * ブロック選択： <code>1</code>(草) / <code>2</code>(土) / <code>3</code>(原木) / <code>4</code>(葉) / <code>5</code>(松明)<br>
+        * アクション： マウス <b>左クリック(破壊)</b> / <b>右クリック(設置)</b><br>
+        * <span class="highlight">クラフト： <code>C</code> キー (原木×1 を消費して 松明×2 を作成)</span>
     </div>
 
 <script>
@@ -45,29 +48,35 @@
     const ctx = canvas.getContext("2d");
 
     const TILE_SIZE = 40;
-    // ワールド全体の広さ（画面よりずっと大きい）
-    const WORLD_COLS = 100; // 横に100マス (4000ピクセル)
-    const WORLD_ROWS = 30;  // 縦に30マス (1200ピクセル)
+    const WORLD_COLS = 100;
+    const WORLD_ROWS = 40; // 地下を少し深くしました
     const REACH = TILE_SIZE * 5;
 
-    const inventory = { 1: 0, 2: 0 };
+    // ブロックID: 1=草, 2=土, 3=原木, 4=葉っぱ, 5=松明(光源)
+    const inventory = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
     let selectedBlock = 1;
     const keys = { a: false, d: false, w: false };
     
-    // マウス座標（画面上の純粋な位置）
     let rawMouseX = 0, rawMouseY = 0;
     let targetTile = null;
-
-    // カメラ（画面に映す範囲）
     const camera = { x: 0, y: 0 };
 
     window.addEventListener("keydown", (e) => {
         if (e.key === "a" || e.key === "A") keys.a = true;
         if (e.key === "d" || e.key === "D") keys.d = true;
         if (e.key === "w" || e.key === "W") keys.w = true;
-        if (e.key === "1") selectedBlock = 1;
-        if (e.key === "2") selectedBlock = 2;
+        
+        if (e.key >= "1" && e.key <= "5") selectedBlock = parseInt(e.key);
+        
+        // クラフト処理 (Cキー)
+        if (e.key === "c" || e.key === "C") {
+            if (inventory[3] >= 1) { // 原木を1つ以上持っていれば
+                inventory[3] -= 1;   // 原木を消費
+                inventory[5] += 2;   // 松明を2つ獲得
+            }
+        }
     });
+
     window.addEventListener("keyup", (e) => {
         if (e.key === "a" || e.key === "A") keys.a = false;
         if (e.key === "d" || e.key === "D") keys.d = false;
@@ -85,13 +94,13 @@
     canvas.addEventListener("mousedown", (e) => {
         if (!targetTile) return;
 
-        if (e.button === 0) { 
+        if (e.button === 0) { // 破壊
             if (targetTile.isBlock) {
                 const blockType = world[targetTile.row][targetTile.col];
                 inventory[blockType]++;
                 world[targetTile.row][targetTile.col] = 0;
             }
-        } else if (e.button === 2) { 
+        } else if (e.button === 2) { // 設置
             if (!targetTile.isBlock && inventory[selectedBlock] > 0) {
                 if (!isCollidingWithPlayer(targetTile.col, targetTile.row)) {
                     inventory[selectedBlock]--;
@@ -101,29 +110,55 @@
         }
     });
 
-    // 自然な起伏のあるワールドを生成
+    // --- ワールド・地形生成 ---
     const world = [];
+    const surfaceLevels = []; // 各列の地表の高さを記録
+
+    // 1. 地面の起伏を決定
+    for (let c = 0; c < WORLD_COLS; c++) {
+        surfaceLevels[c] = 10 + Math.floor(Math.sin(c * 0.15) * 3);
+    }
+
+    // 2. 基本の地形（土と草）を配置
     for (let r = 0; r < WORLD_ROWS; r++) {
         let row = [];
         for (let c = 0; c < WORLD_COLS; c++) {
-            // 列ごとに地面の高さ（波）を計算
-            let surfaceLevel = 10 + Math.floor(Math.sin(c * 0.15) * 3);
-            
-            if (r < surfaceLevel) row.push(0); // 空
-            else if (r === surfaceLevel) row.push(1); // 草
-            else row.push(2); // 土
+            let sl = surfaceLevels[c];
+            if (r < sl) row.push(0);
+            else if (r === sl) row.push(1);
+            else row.push(2);
         }
         world.push(row);
     }
 
-    // プレイヤーの初期位置をワールドの中央付近へ
+    // 3. 木を生やす
+    for (let c = 5; c < WORLD_COLS - 5; c++) {
+        if (Math.random() < 0.15) { // 15%の確率で木が生える
+            let sl = surfaceLevels[c];
+            let treeHeight = Math.floor(Math.random() * 3) + 3; // 幹の高さ3〜5
+            
+            // 幹を生成
+            for (let i = 1; i <= treeHeight; i++) {
+                world[sl - i][c] = 3; // 原木
+            }
+            // 葉っぱを生成
+            for (let lr = sl - treeHeight - 2; lr <= sl - treeHeight; lr++) {
+                for (let lc = c - 1; lc <= c + 1; lc++) {
+                    if (lr >= 0 && lc >= 0 && lc < WORLD_COLS && world[lr][lc] === 0) {
+                        world[lr][lc] = 4; // 葉
+                    }
+                }
+            }
+            c += 2; // 木が隣接しすぎないようにスキップ
+        }
+    }
+
+    // プレイヤー初期化
     const player = {
         x: (WORLD_COLS * TILE_SIZE) / 2, 
         y: 0,
         width: 30, height: 40,
-        vx: 0, vy: 0,
-        speed: 5, jumpPower: -11, gravity: 0.6,
-        grounded: false
+        vx: 0, vy: 0, speed: 5, jumpPower: -11, gravity: 0.6, grounded: false
     };
 
     function getTile(x, y) {
@@ -136,18 +171,14 @@
     function isCollidingWithPlayer(col, row) {
         const tx = col * TILE_SIZE;
         const ty = row * TILE_SIZE;
-        return (player.x < tx + TILE_SIZE && 
-                player.x + player.width > tx && 
-                player.y < ty + TILE_SIZE && 
-                player.y + player.height > ty);
+        return (player.x < tx + TILE_SIZE && player.x + player.width > tx && 
+                player.y < ty + TILE_SIZE && player.y + player.height > ty);
     }
 
     function updateTargetTile() {
         targetTile = null;
-        // マウスの絶対座標（カメラ位置 + 画面上のマウス位置）
         const absoluteMouseX = rawMouseX + camera.x;
         const absoluteMouseY = rawMouseY + camera.y;
-
         const px = player.x + player.width / 2;
         const py = player.y + player.height / 2;
         
@@ -160,9 +191,7 @@
         const steps = dist / 2; 
         const stepX = dx / steps;
         const stepY = dy / steps;
-        
-        let cx = px;
-        let cy = py;
+        let cx = px, cy = py;
         
         for (let i = 0; i <= steps; i++) {
             const col = Math.floor(cx / TILE_SIZE);
@@ -174,8 +203,7 @@
                     return;
                 }
             }
-            cx += stepX;
-            cy += stepY;
+            cx += stepX; cy += stepY;
         }
         
         const mCol = Math.floor(absoluteMouseX / TILE_SIZE);
@@ -223,52 +251,87 @@
             }
         }
 
-        // ワールドの端から落ちないように制限
         if (player.x < 0) player.x = 0;
         if (player.x + player.width > WORLD_COLS * TILE_SIZE) player.x = WORLD_COLS * TILE_SIZE - player.width;
-        if (player.y > WORLD_ROWS * TILE_SIZE) { // ワールドの底に落ちたら空からリスポーン
-            player.y = 0; 
-            player.vy = 0; 
-        }
+        if (player.y > WORLD_ROWS * TILE_SIZE) { player.y = 0; player.vy = 0; }
 
-        // カメラの更新（プレイヤーを中心に）
-        camera.x = player.x + player.width / 2 - canvas.width / 2;
-        camera.y = player.y + player.height / 2 - canvas.height / 2;
-
-        // カメラがワールド外にはみ出さないように制御
-        camera.x = Math.max(0, Math.min(camera.x, WORLD_COLS * TILE_SIZE - canvas.width));
-        camera.y = Math.max(0, Math.min(camera.y, WORLD_ROWS * TILE_SIZE - canvas.height));
+        camera.x = Math.max(0, Math.min(player.x + player.width / 2 - canvas.width / 2, WORLD_COLS * TILE_SIZE - canvas.width));
+        camera.y = Math.max(0, Math.min(player.y + player.height / 2 - canvas.height / 2, WORLD_ROWS * TILE_SIZE - canvas.height));
 
         updateTargetTile();
     }
 
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // カメラのスクロールを適用して描画
         ctx.save();
         ctx.translate(-camera.x, -camera.y);
 
-        // 画面に映っている範囲だけを描画（最適化）
         const startCol = Math.max(0, Math.floor(camera.x / TILE_SIZE));
         const endCol = Math.min(WORLD_COLS, startCol + Math.ceil(canvas.width / TILE_SIZE) + 1);
         const startRow = Math.max(0, Math.floor(camera.y / TILE_SIZE));
         const endRow = Math.min(WORLD_ROWS, startRow + Math.ceil(canvas.height / TILE_SIZE) + 1);
 
+        // 光源（松明）のリストアップ
+        const torches = [];
+        for (let r = startRow; r < endRow; r++) {
+            for (let c = startCol; c < endCol; c++) {
+                if (world[r][c] === 5) torches.push({ r: r, c: c, intensity: 6 }); // 松明の光の強さ
+            }
+        }
+        // プレイヤー自身も微弱な光源とする
+        const pCol = Math.floor((player.x + player.width / 2) / TILE_SIZE);
+        const pRow = Math.floor((player.y + player.height / 2) / TILE_SIZE);
+        torches.push({ r: pRow, c: pCol, intensity: 3 });
+
+        // タイルと照明の描画
         for (let r = startRow; r < endRow; r++) {
             for (let c = startCol; c < endCol; c++) {
                 const tile = world[r][c];
+                
+                // ブロックの描画
                 if (tile !== 0) {
-                    if (tile === 1) ctx.fillStyle = "#2ecc71";
-                    else if (tile === 2) ctx.fillStyle = "#8e44ad";
+                    if (tile === 1) ctx.fillStyle = "#2ecc71"; // 草
+                    else if (tile === 2) ctx.fillStyle = "#8e44ad"; // 土
+                    else if (tile === 3) ctx.fillStyle = "#8D6E63"; // 原木
+                    else if (tile === 4) ctx.fillStyle = "#27ae60"; // 葉
+                    else if (tile === 5) ctx.fillStyle = "#f39c12"; // 松明
                     
                     ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                     ctx.strokeStyle = "rgba(0,0,0,0.2)";
                     ctx.strokeRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                 }
+
+                // ライティング（暗闇レイヤーの計算と描画）
+                let sl = surfaceLevels[c];
+                let depth = r - sl;
+                let baseDarkness = 0;
+                
+                // 地下に行くほどベースが暗くなる
+                if (depth > 0) {
+                    baseDarkness = Math.min(0.95, depth * 0.15); // 最大95%の暗闇
+                }
+
+                // 光源からの距離を計算して明るくする
+                let lightEffect = 0;
+                for (let t of torches) {
+                    let dist = Math.sqrt(Math.pow(r - t.r, 2) + Math.pow(c - t.c, 2));
+                    if (dist < t.intensity) {
+                        lightEffect += 1 - (dist / t.intensity);
+                    }
+                }
+
+                // 最終的な暗さを適用
+                let finalDarkness = baseDarkness - lightEffect;
+                finalDarkness = Math.max(0, Math.min(0.95, finalDarkness));
+
+                if (finalDarkness > 0) {
+                    ctx.fillStyle = `rgba(0, 0, 0, ${finalDarkness})`;
+                    ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                }
             }
         }
 
+        // ターゲットのハイライト
         if (targetTile) {
             ctx.strokeStyle = "rgba(255, 255, 0, 0.9)";
             ctx.lineWidth = 3;
@@ -276,25 +339,27 @@
             ctx.lineWidth = 1;
         }
 
+        // プレイヤーの描画
         ctx.fillStyle = "#e74c3c";
         ctx.fillRect(player.x, player.y, player.width, player.height);
 
-        // スクロールの影響をリセット（UIは画面に固定するため）
         ctx.restore();
 
-        // UIの描画
-        ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-        ctx.fillRect(10, 10, 130, 80);
+        // UI（インベントリ）の描画
+        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+        ctx.fillRect(10, 10, 140, 160);
         
         ctx.fillStyle = "white";
         ctx.font = "16px sans-serif";
-        ctx.fillText(`[1] 草: ${inventory[1]} 個`, 20, 35);
-        ctx.fillText(`[2] 土: ${inventory[2]} 個`, 20, 65);
+        const items = ["草", "土", "原木", "葉", "松明"];
+        for (let i = 1; i <= 5; i++) {
+            ctx.fillText(`[${i}] ${items[i-1]}: ${inventory[i]}`, 20, 20 + i * 25);
+        }
 
+        // 選択中ブロックの枠線
         ctx.strokeStyle = "#f1c40f";
         ctx.lineWidth = 2;
-        if (selectedBlock === 1) ctx.strokeRect(15, 18, 120, 24);
-        if (selectedBlock === 2) ctx.strokeRect(15, 48, 120, 24);
+        ctx.strokeRect(15, 5 + selectedBlock * 25, 130, 24);
         ctx.lineWidth = 1;
     }
 

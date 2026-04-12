@@ -313,7 +313,7 @@ function update() {
     frameCount++;
     
     // 水の更新頻度を上げ、より滑らかに流れるように設定
-    if (frameCount % 2 === 0) {
+    if (frameCount % 10 === 0) {
         updateFluids();
     }
 

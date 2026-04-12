@@ -6,7 +6,7 @@ const WORLD_COLS = 100;
 const WORLD_ROWS = 40;
 const REACH = TILE_SIZE * 5;
 
-// ブロック情報と色（7: 水 を追加）
+// ブロック情報と色
 const BLOCK_COLORS = {
     1: "#2ecc71", // 草
     2: "#8e44ad", // 土
@@ -14,19 +14,18 @@ const BLOCK_COLORS = {
     4: "#27ae60", // 葉
     5: "#f39c12", // 松明
     6: "#e67e22", // 木材
-    7: "rgba(52, 152, 219, 0.7)" // 水（半透明）
+    7: "#3498db"  // 水（インベントリ表示用）
 };
 
-// ブロックの硬さ
-const BLOCK_HARDNESS = { 1: 15, 2: 20, 3: 45, 4: 5, 5: 5, 6: 30, 7: 5 };
+const BLOCK_HARDNESS = { 1: 15, 2: 20, 3: 45, 4: 5, 5: 5, 6: 30 };
 
-// マイクラ風ホットバー (初期状態として7スロット目に水を入れておきます)
+// インベントリ (7スロット目に水)
 const hotbar = [
     { id: 1, count: 0 }, { id: 2, count: 0 }, { id: 3, count: 0 },
     { id: 4, count: 0 }, { id: 5, count: 0 }, { id: 6, count: 0 },
     { id: 7, count: 50 }, { id: 0, count: 0 }, { id: 0, count: 0 }
 ];
-let selectedSlot = 0; // 0~8
+let selectedSlot = 0;
 
 let isMining = false;
 let miningTarget = null;
@@ -80,15 +79,9 @@ window.addEventListener("keydown", (e) => {
     if (e.key === "a" || e.key === "A") keys.a = true;
     if (e.key === "d" || e.key === "D") keys.d = true;
     if (e.key === "w" || e.key === "W") keys.w = true;
-    
     if (e.key >= "1" && e.key <= "9") selectedSlot = parseInt(e.key) - 1;
-    
-    if (e.key === "z" || e.key === "Z") {
-        if (consumeItem(3, 1)) addToInventory(6, 4);
-    }
-    if (e.key === "x" || e.key === "X") {
-        if (consumeItem(6, 1)) addToInventory(5, 2);
-    }
+    if (e.key === "z" || e.key === "Z") { if (consumeItem(3, 1)) addToInventory(6, 4); }
+    if (e.key === "x" || e.key === "X") { if (consumeItem(6, 1)) addToInventory(5, 2); }
 });
 
 window.addEventListener("keyup", (e) => {
@@ -107,16 +100,31 @@ canvas.addEventListener("contextmenu", e => e.preventDefault());
 
 canvas.addEventListener("mousedown", (e) => {
     if (!targetTile) return;
-    if (e.button === 0 && targetTile.isBlock) { 
-        isMining = true;
-        miningTarget = { col: targetTile.col, row: targetTile.row };
-        miningProgress = 0;
+    const r = targetTile.row;
+    const c = targetTile.col;
+
+    if (e.button === 0) { 
+        if (targetTile.isBlock) {
+            // ブロックの破壊
+            isMining = true;
+            miningTarget = { col: c, row: r };
+            miningProgress = 0;
+        } else if (water[r][c] > 0.1) {
+            // 水をすくう（回収）
+            water[r][c] = 0;
+            addToInventory(7, 1);
+        }
     } else if (e.button === 2 && !targetTile.isBlock) { 
         const slot = hotbar[selectedSlot];
-        // 水(7)はプレイヤーに重なっていても配置可能にする
-        let canPlace = slot.id === 7 || !isCollidingWithPlayer(targetTile.col, targetTile.row);
-        if (slot.id !== 0 && slot.count > 0 && canPlace) {
-            world[targetTile.row][targetTile.col] = slot.id;
+        if (slot.id === 7 && slot.count > 0) {
+            // 水を設置する（1マス分の水量をプラス）
+            water[r][c] = Math.min(1.0, water[r][c] + 1.0);
+            slot.count--;
+            if(slot.count === 0) slot.id = 0;
+        } else if (slot.id !== 0 && slot.count > 0 && !isCollidingWithPlayer(c, r)) {
+            // ブロックを設置する（水がある場合は上書きして消滅させる）
+            world[r][c] = slot.id;
+            water[r][c] = 0; 
             slot.count--;
             if(slot.count === 0) slot.id = 0;
         }
@@ -136,20 +144,25 @@ canvas.addEventListener("mouseleave", () => {
     miningTarget = null;
 });
 
-// --- ワールド生成 ---
-const world = [];
+// --- ワールド生成（地形と水のデータを分離） ---
+const world = []; // 固形ブロック用
+const water = []; // 水量（0.0 ～ 1.0）用
 const surfaceLevels = [];
+
 for (let c = 0; c < WORLD_COLS; c++) surfaceLevels[c] = 10 + Math.floor(Math.sin(c * 0.15) * 3);
 
 for (let r = 0; r < WORLD_ROWS; r++) {
     let row = [];
+    let wRow = [];
     for (let c = 0; c < WORLD_COLS; c++) {
+        wRow.push(0); // 初期状態は水ゼロ
         let sl = surfaceLevels[c];
         if (r < sl) row.push(0);
         else if (r === sl) row.push(1);
         else row.push(2);
     }
     world.push(row);
+    water.push(wRow);
 }
 
 // 木の生成
@@ -167,12 +180,12 @@ for (let c = 5; c < WORLD_COLS - 5; c++) {
     }
 }
 
-// 水たまりをランダムに生成（地形のくぼみなどに）
+// 水たまりをランダムに生成（水量を1.0にする）
 for (let c = 10; c < WORLD_COLS - 10; c++) {
     if (Math.random() < 0.05) {
         let sl = surfaceLevels[c];
-        world[sl - 1][c] = 7;
-        if(world[sl - 1][c + 1] === 0) world[sl - 1][c + 1] = 7;
+        water[sl - 1][c] = 1.0;
+        if (world[sl - 1][c + 1] === 0) water[sl - 1][c + 1] = 1.0;
     }
 }
 
@@ -186,14 +199,12 @@ function getTile(x, y) {
     const col = Math.floor(x / TILE_SIZE);
     const row = Math.floor(y / TILE_SIZE);
     if (row >= 0 && row < WORLD_ROWS && col >= 0 && col < WORLD_COLS) return world[row][col];
-    return 0; // 画面外は空とみなす
+    return 0;
 }
 
-// 物理演算用（水はすり抜けられるようにする）
+// 物理演算用（水は別配列になったので、worldが0でなければ固形とみなす）
 function isSolid(x, y) {
-    const tile = getTile(x, y);
-    // 0は空、7は水。それ以外は固形ブロックと判定
-    return tile !== 0 && tile !== 7;
+    return getTile(x, y) !== 0;
 }
 
 function isCollidingWithPlayer(col, row) {
@@ -221,6 +232,7 @@ function updateTargetTile() {
     for (let i = 0; i <= steps; i++) {
         const col = Math.floor(cx / TILE_SIZE), row = Math.floor(cy / TILE_SIZE);
         if (row >= 0 && row < WORLD_ROWS && col >= 0 && col < WORLD_COLS) {
+            // 固形ブロックに当たったらターゲット
             if (world[row][col] !== 0) {
                 targetTile = { col: col, row: row, isBlock: true };
                 return;
@@ -229,51 +241,69 @@ function updateTargetTile() {
         cx += stepX; cy += stepY;
     }
     
+    // ブロックに当たらなかったら、カーソル位置の空きスペース（または水）をターゲット
     const mCol = Math.floor(absoluteMouseX / TILE_SIZE), mRow = Math.floor(absoluteMouseY / TILE_SIZE);
     if (mRow >= 0 && mRow < WORLD_ROWS && mCol >= 0 && mCol < WORLD_COLS) {
         targetTile = { col: mCol, row: mRow, isBlock: false };
     }
 }
 
-// --- 流体の計算ロジック ---
+// --- テラリア方式：流体の体積計算ロジック ---
 let frameCount = 0;
 let scanDirection = 1;
 
 function updateFluids() {
-    // 左右の偏りを防ぐため、フレームごとにスキャン方向を反転
+    // スキャン方向を反転させ、左右の流れる速度を均等にする
     scanDirection *= -1; 
     
-    // 下の行から上の行へ計算する（一瞬で下まで落ちないように）
     for (let r = WORLD_ROWS - 2; r >= 0; r--) {
         const start = scanDirection === 1 ? 0 : WORLD_COLS - 1;
         const end = scanDirection === 1 ? WORLD_COLS : -1;
         const step = scanDirection === 1 ? 1 : -1;
 
         for (let c = start; c !== end; c += step) {
-            if (world[r][c] === 7) {
-                // 1. 下が空いていれば下に落ちる
-                if (world[r + 1][c] === 0) {
-                    world[r + 1][c] = 7;
-                    world[r][c] = 0;
-                } 
-                // 2. 下が塞がっている（空でも水でもない）場合、左右に広がる
-                else if (world[r + 1][c] !== 0 && world[r + 1][c] !== 7) {
-                    let leftEmpty = c > 0 && world[r][c - 1] === 0;
-                    let rightEmpty = c < WORLD_COLS - 1 && world[r][c + 1] === 0;
-                    
-                    if (leftEmpty && rightEmpty) {
-                        // 両方空いていればランダムな方向に流れる
-                        if (Math.random() < 0.5) {
-                            world[r][c - 1] = 7; world[r][c] = 0;
-                        } else {
-                            world[r][c + 1] = 7; world[r][c] = 0;
-                        }
-                    } else if (leftEmpty) {
-                        world[r][c - 1] = 7; world[r][c] = 0;
-                    } else if (rightEmpty) {
-                        world[r][c + 1] = 7; world[r][c] = 0;
-                    }
+            if (water[r][c] <= 0) continue;
+
+            // 1. 下へ流れる（重力）
+            if (world[r + 1][c] === 0) {
+                let freeSpace = 1.0 - water[r + 1][c];
+                if (freeSpace > 0) {
+                    let flow = Math.min(water[r][c], freeSpace);
+                    water[r][c] -= flow;
+                    water[r + 1][c] += flow;
                 }
+            }
+
+            if (water[r][c] <= 0.005) continue;
+
+            // 2. 左右へ広がる（均等化）
+            let c1 = c + step;
+            let c2 = c - step;
+
+            // 進行方向の隣と水量を平均化
+            if (c1 >= 0 && c1 < WORLD_COLS && world[r][c1] === 0) {
+                if (water[r][c] > water[r][c1]) {
+                    let flow = (water[r][c] - water[r][c1]) / 2;
+                    water[r][c] -= flow;
+                    water[r][c1] += flow;
+                }
+            }
+            // 逆方向の隣と水量を平均化
+            if (c2 >= 0 && c2 < WORLD_COLS && world[r][c2] === 0) {
+                if (water[r][c] > water[r][c2]) {
+                    let flow = (water[r][c] - water[r][c2]) / 2;
+                    water[r][c] -= flow;
+                    water[r][c2] += flow;
+                }
+            }
+        }
+    }
+
+    // パフォーマンス維持のため、目に見えない微量な水は蒸発させる
+    for (let r = 0; r < WORLD_ROWS; r++) {
+        for (let c = 0; c < WORLD_COLS; c++) {
+            if (water[r][c] > 0 && water[r][c] < 0.02) {
+                water[r][c] = 0;
             }
         }
     }
@@ -281,15 +311,19 @@ function updateFluids() {
 
 function update() {
     frameCount++;
-
-    // 10フレームに1回だけ水の流れを更新（流れるスピードの調整）
-    if (frameCount % 10 === 0) {
+    
+    // 水の更新頻度を上げ、より滑らかに流れるように設定
+    if (frameCount % 2 === 0) {
         updateFluids();
     }
 
     // --- 移動処理 ---
-    // 水の中では動きを少し遅くする
-    let inWater = getTile(player.x + player.width/2, player.y + player.height/2) === 7;
+    let pCol = Math.floor((player.x + player.width/2) / TILE_SIZE);
+    let pRow = Math.floor((player.y + player.height/2) / TILE_SIZE);
+    
+    // プレイヤーが一定量の水に浸かっているか判定
+    let inWater = pRow >= 0 && pRow < WORLD_ROWS && pCol >= 0 && pCol < WORLD_COLS && water[pRow][pCol] > 0.3;
+    
     let currentSpeed = inWater ? player.speed * 0.5 : player.speed;
     let currentGravity = inWater ? player.gravity * 0.5 : player.gravity;
 
@@ -297,19 +331,18 @@ function update() {
     else if (keys.d) player.vx = currentSpeed;
     else player.vx = 0;
 
-    // 水中ではジャンプ力が弱まり、連続で上へ泳げるようにする
     if (keys.w) {
         if (player.grounded) {
             player.vy = player.jumpPower;
             player.grounded = false;
         } else if (inWater) {
-            player.vy = player.jumpPower * 0.4; // 水泳
+            player.vy = player.jumpPower * 0.4;
         }
     }
 
     player.vy += currentGravity;
     
-    // X軸の当たり判定 (isSolidを使用)
+    // X軸当たり判定
     player.x += player.vx;
     if (player.vx > 0) {
         if (isSolid(player.x + player.width, player.y) || isSolid(player.x + player.width, player.y + player.height - 1)) {
@@ -321,7 +354,7 @@ function update() {
         }
     }
 
-    // Y軸の当たり判定 (isSolidを使用)
+    // Y軸当たり判定
     player.y += player.vy;
     player.grounded = false;
     if (player.vy > 0) {
@@ -337,7 +370,6 @@ function update() {
         }
     }
 
-    // 画面外への落下防止
     if (player.x < 0) player.x = 0;
     if (player.x + player.width > WORLD_COLS * TILE_SIZE) player.x = WORLD_COLS * TILE_SIZE - player.width;
     if (player.y > WORLD_ROWS * TILE_SIZE) { player.y = 0; player.vy = 0; }
@@ -347,7 +379,7 @@ function update() {
 
     updateTargetTile();
 
-    // --- 採掘の進行処理 ---
+    // 採掘処理
     if (isMining && miningTarget) {
         if (!targetTile || !targetTile.isBlock || targetTile.col !== miningTarget.col || targetTile.row !== miningTarget.row) {
             isMining = false;
@@ -356,7 +388,6 @@ function update() {
         } else {
             const blockId = world[miningTarget.row][miningTarget.col];
             miningProgress++;
-            
             if (miningProgress >= BLOCK_HARDNESS[blockId]) {
                 addToInventory(blockId, 1);
                 world[miningTarget.row][miningTarget.col] = 0;
@@ -389,26 +420,37 @@ function draw() {
     for (let r = startRow; r < endRow; r++) {
         for (let c = startCol; c < endCol; c++) {
             const tile = world[r][c];
+            const liquidLevel = water[r][c];
             
+            // 固形ブロックの描画
             if (tile !== 0) {
                 ctx.fillStyle = BLOCK_COLORS[tile] || "white";
                 ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                ctx.strokeStyle = "rgba(0,0,0,0.2)";
+                ctx.strokeRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                 
-                // 水の場合は枠線を描画しない（滑らかな見た目にするため）
-                if (tile !== 7) {
-                    ctx.strokeStyle = "rgba(0,0,0,0.2)";
-                    ctx.strokeRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                if (miningTarget && miningTarget.row === r && miningTarget.col === c) {
+                    const ratio = miningProgress / BLOCK_HARDNESS[tile];
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+                    const h = TILE_SIZE * ratio;
+                    ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE + (TILE_SIZE - h), TILE_SIZE, h);
                 }
+            } 
+            // 水の描画（水量に応じて高さを変える）
+            else if (liquidLevel > 0) {
+                ctx.fillStyle = "rgba(52, 152, 219, 0.7)";
+                let h = liquidLevel * TILE_SIZE;
+                let yOffset = TILE_SIZE - h;
+                
+                // 上のマスにも水がある場合は、隙間をなくすため1マス分描画する
+                if (r > 0 && water[r - 1][c] > 0) {
+                    h = TILE_SIZE;
+                    yOffset = 0;
+                }
+                ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE + yOffset, TILE_SIZE, h);
             }
 
-            if (miningTarget && miningTarget.row === r && miningTarget.col === c && tile !== 0) {
-                const ratio = miningProgress / BLOCK_HARDNESS[tile];
-                ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-                const h = TILE_SIZE * ratio;
-                ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE + (TILE_SIZE - h), TILE_SIZE, h);
-            }
-
-            // ライティング
+            // ライティングの描画
             let depth = r - surfaceLevels[c];
             let baseDarkness = depth > 0 ? Math.min(0.95, depth * 0.15) : 0;
             
@@ -436,7 +478,7 @@ function draw() {
     ctx.fillRect(player.x, player.y, player.width, player.height);
     ctx.restore();
 
-    // --- ホットバー (UI) ---
+    // --- ホットバー ---
     const barWidth = 9 * 50;
     const startX = (canvas.width - barWidth) / 2;
     const startY = canvas.height - 60;

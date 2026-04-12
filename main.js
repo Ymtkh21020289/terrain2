@@ -2,11 +2,10 @@ const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
 const TILE_SIZE = 40;
-const WORLD_COLS = 150; // ワールドの幅を拡大
-const WORLD_ROWS = 100; // 地下を大幅に深く（40 → 100）
+const WORLD_COLS = 150; 
+const WORLD_ROWS = 100; 
 const REACH = TILE_SIZE * 5;
 
-// ブロック情報と色（8: 石 を追加）
 const BLOCK_COLORS = {
     1: "#2ecc71", // 草
     2: "#8e44ad", // 土
@@ -14,11 +13,10 @@ const BLOCK_COLORS = {
     4: "#27ae60", // 葉
     5: "#f39c12", // 松明
     6: "#e67e22", // 木材
-    7: "#3498db", // 水（インベントリ表示用）
-    8: "#7f8c8d"  // 石（新ブロック）
+    7: "#3498db", // 水
+    8: "#7f8c8d"  // 石
 };
 
-// 石(8)は硬めに設定
 const BLOCK_HARDNESS = { 1: 15, 2: 20, 3: 45, 4: 5, 5: 5, 6: 30, 8: 60 };
 
 const hotbar = [
@@ -32,12 +30,13 @@ let isMining = false;
 let miningTarget = null;
 let miningProgress = 0;
 
-const keys = { a: false, d: false, w: false };
+// Sキー（下降用）とデバッグモードのフラグを追加
+const keys = { a: false, d: false, w: false, s: false };
 let rawMouseX = 0, rawMouseY = 0;
 let targetTile = null;
 const camera = { x: 0, y: 0 };
+let debugMode = false;
 
-// --- インベントリ管理 ---
 function addToInventory(id, amount) {
     for(let i = 0; i < 9; i++) {
         if(hotbar[i].id === id) {
@@ -73,11 +72,15 @@ function consumeItem(id, amount) {
     return false;
 }
 
-// --- 入力処理 ---
 window.addEventListener("keydown", (e) => {
+    if (e.key === "T") {
+        debugMode = !debugMode;
+        e.preventDefault();
+    }
     if (e.key === "a" || e.key === "A") keys.a = true;
     if (e.key === "d" || e.key === "D") keys.d = true;
     if (e.key === "w" || e.key === "W") keys.w = true;
+    if (e.key === "s" || e.key === "S") keys.s = true;
     if (e.key >= "1" && e.key <= "9") selectedSlot = parseInt(e.key) - 1;
     if (e.key === "z" || e.key === "Z") { if (consumeItem(3, 1)) addToInventory(6, 4); }
     if (e.key === "x" || e.key === "X") { if (consumeItem(6, 1)) addToInventory(5, 2); }
@@ -86,6 +89,7 @@ window.addEventListener("keyup", (e) => {
     if (e.key === "a" || e.key === "A") keys.a = false;
     if (e.key === "d" || e.key === "D") keys.d = false;
     if (e.key === "w" || e.key === "W") keys.w = false;
+    if (e.key === "s" || e.key === "S") keys.s = false;
 });
 canvas.addEventListener("mousemove", (e) => {
     const rect = canvas.getBoundingClientRect();
@@ -125,35 +129,30 @@ canvas.addEventListener("mouseup", (e) => {
 });
 canvas.addEventListener("mouseleave", () => { isMining = false; miningProgress = 0; miningTarget = null; });
 
-// --- ワールド生成（地形、池、洞窟） ---
 const world = [];
 const water = [];
 const surfaceLevels = [];
 const pondData = [];
 
-// 1. 基本の地表ラインを決定
 for (let c = 0; c < WORLD_COLS; c++) {
     surfaceLevels[c] = 20 + Math.floor(Math.sin(c * 0.1) * 3) + Math.floor(Math.sin(c * 0.05) * 4);
 }
 
-// 2. 池のくぼみを削る処理
 for (let c = 10; c < WORLD_COLS - 15; c++) {
-    if (Math.random() < 0.08) { // 8%の確率で池を生成
-        let pWidth = 5 + Math.floor(Math.random() * 6); // 幅 5～10
-        let pDepth = 3 + Math.floor(Math.random() * 3); // 深さ 3～5
-        let startLevel = surfaceLevels[c]; // 水を張る基準ライン
+    if (Math.random() < 0.08) { 
+        let pWidth = 5 + Math.floor(Math.random() * 6); 
+        let pDepth = 3 + Math.floor(Math.random() * 3); 
+        let startLevel = surfaceLevels[c]; 
         
         for (let i = 0; i < pWidth; i++) {
-            // サイン波を使ってお椀型のくぼみを計算
             let dip = Math.floor(Math.sin((i / (pWidth - 1)) * Math.PI) * pDepth);
-            surfaceLevels[c + i] += dip; // 地面を下げる
-            pondData.push({ c: c + i, r: startLevel, dip: dip }); // 水を張る用のデータを保存
+            surfaceLevels[c + i] += dip; 
+            pondData.push({ c: c + i, r: startLevel, dip: dip }); 
         }
-        c += pWidth + 10; // 次の池まで最低10マス間隔をあける
+        c += pWidth + 10; 
     }
 }
 
-// 3. ブロックと初期の空洞の配置
 for (let r = 0; r < WORLD_ROWS; r++) {
     let row = [];
     let wRow = [];
@@ -161,11 +160,10 @@ for (let r = 0; r < WORLD_ROWS; r++) {
         wRow.push(0);
         let sl = surfaceLevels[c];
 
-        if (r < sl) row.push(0); // 空
-        else if (r === sl) row.push(1); // 草
-        else if (r > sl && r < sl + 6) row.push(2); // 土
+        if (r < sl) row.push(0);
+        else if (r === sl) row.push(1); 
+        else if (r > sl && r < sl + 6) row.push(2); 
         else {
-            // 地下深くは石(8)と、洞窟の種となる空洞(0)をランダムに配置
             row.push(Math.random() < 0.55 ? 8 : 0);
         }
     }
@@ -173,14 +171,12 @@ for (let r = 0; r < WORLD_ROWS; r++) {
     water.push(wRow);
 }
 
-// 4. 洞窟生成（セル・オートマトン）
-// ランダムな空洞を「周囲のブロック数」に基づいて滑らかな洞窟の形に整える
 for(let pass = 0; pass < 4; pass++) {
     let newWorld = [];
     for (let r = 0; r < WORLD_ROWS; r++) {
         let newRow = [...world[r]];
         for (let c = 0; c < WORLD_COLS; c++) {
-            if (r <= surfaceLevels[c] + 6) continue; // 地表付近は洞窟にしない
+            if (r <= surfaceLevels[c] + 6) continue; 
 
             let walls = 0;
             for (let dr = -1; dr <= 1; dr++) {
@@ -190,7 +186,6 @@ for(let pass = 0; pass < 4; pass++) {
                     else if (world[nr][nc] === 8 || world[nr][nc] === 2) walls++;
                 }
             }
-            // 周囲に壁が多いなら壁になり、少ないなら空洞になる
             newRow[c] = (walls >= 5) ? 8 : 0;
         }
         newWorld.push(newRow);
@@ -202,24 +197,21 @@ for(let pass = 0; pass < 4; pass++) {
     }
 }
 
-// 5. 世界の底が抜けないように一番下を石で塞ぐ
 for (let c = 0; c < WORLD_COLS; c++) {
     world[WORLD_ROWS - 1][c] = 8;
     world[WORLD_ROWS - 2][c] = 8;
 }
 
-// 6. 池のくぼみに水を満たす
 for (let pd of pondData) {
     if (pd.dip > 0) {
         for(let r = pd.r; r < surfaceLevels[pd.c]; r++) {
-            world[r][pd.c] = 0; // ブロックを消去
-            water[r][pd.c] = 1.0; // 水を満タンに
+            world[r][pd.c] = 0; 
+            water[r][pd.c] = 1.0; 
         }
-        world[surfaceLevels[pd.c]][pd.c] = 2; // 池の底は草ではなく土にする
+        world[surfaceLevels[pd.c]][pd.c] = 2; 
     }
 }
 
-// 7. 木の生成（池の中には生えないように）
 for (let c = 5; c < WORLD_COLS - 5; c++) {
     let sl = surfaceLevels[c];
     if (Math.random() < 0.15 && world[sl][c] === 1 && water[sl - 1][c] === 0) {
@@ -279,7 +271,6 @@ function updateTargetTile() {
     }
 }
 
-// --- 流体の計算 ---
 let frameCount = 0;
 let scanDirection = 1;
 
@@ -336,19 +327,28 @@ function update() {
     let pCol = Math.floor((player.x + player.width/2) / TILE_SIZE);
     let pRow = Math.floor((player.y + player.height/2) / TILE_SIZE);
     let inWater = pRow >= 0 && pRow < WORLD_ROWS && pCol >= 0 && pCol < WORLD_COLS && water[pRow][pCol] > 0.3;
-    let currentSpeed = inWater ? player.speed * 0.5 : player.speed;
-    let currentGravity = inWater ? player.gravity * 0.5 : player.gravity;
+    
+    // デバッグモード時は水による減速ペナルティを無効化
+    let currentSpeed = (inWater && !debugMode) ? player.speed * 0.5 : player.speed;
+    let currentGravity = (inWater && !debugMode) ? player.gravity * 0.5 : player.gravity;
 
+    // X軸の移動
     if (keys.a) player.vx = -currentSpeed;
     else if (keys.d) player.vx = currentSpeed;
     else player.vx = 0;
 
-    if (keys.w) {
-        if (player.grounded) { player.vy = player.jumpPower; player.grounded = false; }
-        else if (inWater) { player.vy = player.jumpPower * 0.4; }
+    // Y軸の移動（デバッグモードと通常時で分岐）
+    if (debugMode) {
+        if (keys.w) player.vy = -currentSpeed;
+        else if (keys.s) player.vy = currentSpeed;
+        else player.vy = 0;
+    } else {
+        if (keys.w) {
+            if (player.grounded) { player.vy = player.jumpPower; player.grounded = false; }
+            else if (inWater) { player.vy = player.jumpPower * 0.4; }
+        }
+        player.vy += currentGravity;
     }
-
-    player.vy += currentGravity;
     
     player.x += player.vx;
     if (player.vx > 0) {
@@ -390,7 +390,9 @@ function update() {
             isMining = false; miningProgress = 0; miningTarget = null;
         } else {
             const blockId = world[miningTarget.row][miningTarget.col];
-            miningProgress++;
+            // デバッグモードなら即座に最大プログレス（破壊）にする
+            miningProgress += debugMode ? BLOCK_HARDNESS[blockId] : 1;
+            
             if (miningProgress >= BLOCK_HARDNESS[blockId]) {
                 addToInventory(blockId, 1);
                 world[miningTarget.row][miningTarget.col] = 0;
@@ -411,12 +413,14 @@ function draw() {
     const endRow = Math.min(WORLD_ROWS, startRow + Math.ceil(canvas.height / TILE_SIZE) + 1);
 
     const torches = [];
-    for (let r = startRow; r < endRow; r++) {
-        for (let c = startCol; c < endCol; c++) {
-            if (world[r][c] === 5) torches.push({ r: r, c: c, intensity: 6 });
+    if (!debugMode) {
+        for (let r = startRow; r < endRow; r++) {
+            for (let c = startCol; c < endCol; c++) {
+                if (world[r][c] === 5) torches.push({ r: r, c: c, intensity: 6 });
+            }
         }
+        torches.push({ r: Math.floor((player.y + player.height/2) / TILE_SIZE), c: Math.floor((player.x + player.width/2) / TILE_SIZE), intensity: 3 });
     }
-    torches.push({ r: Math.floor((player.y + player.height/2) / TILE_SIZE), c: Math.floor((player.x + player.width/2) / TILE_SIZE), intensity: 3 });
 
     for (let r = startRow; r < endRow; r++) {
         for (let c = startCol; c < endCol; c++) {
@@ -429,7 +433,7 @@ function draw() {
                 ctx.strokeStyle = "rgba(0,0,0,0.2)";
                 ctx.strokeRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                 
-                if (miningTarget && miningTarget.row === r && miningTarget.col === c) {
+                if (!debugMode && miningTarget && miningTarget.row === r && miningTarget.col === c) {
                     const ratio = miningProgress / BLOCK_HARDNESS[tile];
                     ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
                     const h = TILE_SIZE * ratio;
@@ -444,18 +448,21 @@ function draw() {
                 ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE + yOffset, TILE_SIZE, h);
             }
 
-            let depth = r - surfaceLevels[c];
-            let baseDarkness = depth > 0 ? Math.min(0.95, depth * 0.15) : 0;
-            
-            let lightEffect = 0;
-            for (let t of torches) {
-                let dist = Math.sqrt(Math.pow(r - t.r, 2) + Math.pow(c - t.c, 2));
-                if (dist < t.intensity) lightEffect += 1 - (dist / t.intensity);
-            }
-            let finalDarkness = Math.max(0, Math.min(0.95, baseDarkness - lightEffect));
-            if (finalDarkness > 0) {
-                ctx.fillStyle = `rgba(0, 0, 0, ${finalDarkness})`;
-                ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            // デバッグモードがOFFのときだけ暗闇を描画
+            if (!debugMode) {
+                let depth = r - surfaceLevels[c];
+                let baseDarkness = depth > 0 ? Math.min(0.95, depth * 0.15) : 0;
+                
+                let lightEffect = 0;
+                for (let t of torches) {
+                    let dist = Math.sqrt(Math.pow(r - t.r, 2) + Math.pow(c - t.c, 2));
+                    if (dist < t.intensity) lightEffect += 1 - (dist / t.intensity);
+                }
+                let finalDarkness = Math.max(0, Math.min(0.95, baseDarkness - lightEffect));
+                if (finalDarkness > 0) {
+                    ctx.fillStyle = `rgba(0, 0, 0, ${finalDarkness})`;
+                    ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                }
             }
         }
     }
@@ -470,6 +477,15 @@ function draw() {
     ctx.fillStyle = "#e74c3c";
     ctx.fillRect(player.x, player.y, player.width, player.height);
     ctx.restore();
+
+    // デバッグモード状態の表示
+    if (debugMode) {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+        ctx.fillRect(10, 10, 150, 30);
+        ctx.fillStyle = "#f1c40f";
+        ctx.font = "bold 16px sans-serif";
+        ctx.fillText("DEBUG MODE ON", 20, 30);
+    }
 
     // --- ホットバー ---
     const barWidth = 9 * 50;

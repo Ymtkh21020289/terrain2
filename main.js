@@ -101,7 +101,7 @@ window.addEventListener("keydown", (e) => {
         isMining = false;
         return;
     }
-    if (e.key === "F3") { debugMode = !debugMode; e.preventDefault(); }
+    if (e.key === "T") { debugMode = !debugMode; e.preventDefault(); }
     
     if (!showInventory) {
         if (e.key === "a" || e.key === "A") keys.a = true;

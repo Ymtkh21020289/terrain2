@@ -345,7 +345,7 @@ function update() {
     } else {
         if (keys.w) {
             if (player.grounded) { player.vy = player.jumpPower; player.grounded = false; }
-            else if (inWater) { player.vy = player.jumpPower * 0.4; }
+            else if (inWater) { player.vy = player.jumpPower * 0.7; }
         }
         player.vy += currentGravity;
     }

@@ -418,14 +418,27 @@ function drawSlot(ctx, x, y, item, isSelected = false) {
 }
 
 function draw() {
+    function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(-camera.x, -camera.y);
 
-    const startCol = Math.max(0, Math.floor(camera.x / TILE_SIZE)), endCol = Math.min(WORLD_COLS, startCol + Math.ceil(canvas.width / TILE_SIZE) + 1);
-    const startRow = Math.max(0, Math.floor(camera.y / TILE_SIZE)), endRow = Math.min(WORLD_ROWS, startRow + Math.ceil(canvas.height / TILE_SIZE) + 1);
+    const startCol = Math.max(0, Math.floor(camera.x / TILE_SIZE));
+    const endCol = Math.min(WORLD_COLS, startCol + Math.ceil(canvas.width / TILE_SIZE) + 1);
+    const startRow = Math.max(0, Math.floor(camera.y / TILE_SIZE));
+    const endRow = Math.min(WORLD_ROWS, startRow + Math.ceil(canvas.height / TILE_SIZE) + 1);
+
+    const maxLightRadius = 6;
+    const torchStartCol = Math.max(0, startCol - maxLightRadius);
+    const torchEndCol = Math.min(WORLD_COLS, endCol + maxLightRadius);
+    const torchStartRow = Math.max(0, startRow - maxLightRadius);
+    const torchEndRow = Math.min(WORLD_ROWS, endRow + maxLightRadius);
 
     const torches = [];
     if (!debugMode) {
-        for (let r = startRow; r < endRow; r++) for (let c = startCol; c < endCol; c++) if (world[r][c] === 5) torches.push({ r: r, c: c, intensity: 6 });
+        for (let r = torchStartRow; r < torchEndRow; r++) {
+            for (let c = torchStartCol; c < torchEndCol; c++) {
+                if (world[r][c] === 5) torches.push({ r: r, c: c, intensity: maxLightRadius });
+            }
+        }
         torches.push({ r: Math.floor((player.y + player.height/2) / TILE_SIZE), c: Math.floor((player.x + player.width/2) / TILE_SIZE), intensity: 3 });
     }
 

@@ -418,7 +418,6 @@ function drawSlot(ctx, x, y, item, isSelected = false) {
 }
 
 function draw() {
-    function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(-camera.x, -camera.y);
 
     const startCol = Math.max(0, Math.floor(camera.x / TILE_SIZE));

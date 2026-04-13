@@ -18,8 +18,8 @@ let selectedSlot = 0;
 let showInventory = false;
 let cursorItem = { id: 0, count: 0 };
 let craftScrollY = 0;
-let isNearWorkbench = false; // 作業台判定
-let visibleRecipes = [];     // 実際にUIに表示するレシピ
+let isNearWorkbench = false;
+let visibleRecipes = [];
 
 // --- プレイヤー & ワールド ---
 let isMining = false;
@@ -32,11 +32,69 @@ let targetTile = null;
 const camera = { x: 0, y: 0 };
 let debugMode = false;
 
+// --- 【新規追加】光の拡散（スカイライト）システム ---
+const lightMap = Array.from({length: WORLD_ROWS}, () => new Uint8Array(WORLD_COLS));
+const lightQueue = new Int16Array(500000); // 処理速度アップのための専用キュー
+let needsLightUpdate = true; // 光の再計算フラグ
+
+function updateLighting() {
+    let head = 0;
+    let tail = 0;
+    
+    // 全タイルの光をリセット
+    for (let r = 0; r < WORLD_ROWS; r++) {
+        for (let c = 0; c < WORLD_COLS; c++) {
+            lightMap[r][c] = 0;
+        }
+    }
+    
+    // 1. 真上からの太陽光を計算
+    for (let c = 0; c < WORLD_COLS; c++) {
+        for (let r = 0; r < WORLD_ROWS; r++) {
+            if (world[r][c] === 0 || water[r][c] > 0) {
+                lightMap[r][c] = 15; // 太陽光の最大値
+                lightQueue[tail++] = r;
+                lightQueue[tail++] = c;
+            } else {
+                lightMap[r][c] = 15; // 地表のブロックそのものも明るくする
+                lightQueue[tail++] = r;
+                lightQueue[tail++] = c;
+                break; // ブロックにぶつかったら直射日光はストップ
+            }
+        }
+    }
+    
+    // 2. 光を周囲に拡散させる（横穴などの計算）
+    while(head < tail) {
+        let r = lightQueue[head++];
+        let c = lightQueue[head++];
+        let currentLight = lightMap[r][c];
+        if (currentLight <= 1) continue;
+        
+        const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+        for (let [dr, dc] of dirs) {
+            let nr = r + dr, nc = c + dc;
+            if (nr >= 0 && nr < WORLD_ROWS && nc >= 0 && nc < WORLD_COLS) {
+                let isSolid = world[nr][nc] !== 0;
+                let isWater = water[nr][nc] > 0;
+                // 空気は-1、水は-2、ブロックは-3 ずつ光が減衰する
+                let decrease = isSolid ? 3 : (isWater ? 2 : 1);
+                let nLight = currentLight - decrease;
+                
+                if (nLight > lightMap[nr][nc]) {
+                    lightMap[nr][nc] = nLight;
+                    lightQueue[tail++] = nr;
+                    lightQueue[tail++] = nc;
+                }
+            }
+        }
+    }
+}
+
 // --- インベントリ管理関数 ---
 function addToInventory(id, amount) {
     for(let i = 0; i < 9; i++) if(hotbar[i].id === id) { hotbar[i].count += amount; return; }
     for(let i = 0; i < 36; i++) if(inventory[i].id === id) { inventory[i].count += amount; return; }
-    
     for(let i = 0; i < 9; i++) if(hotbar[i].id === 0) { hotbar[i].id = id; hotbar[i].count = amount; return; }
     for(let i = 0; i < 36; i++) if(inventory[i].id === 0) { inventory[i].id = id; inventory[i].count = amount; return; }
 }
@@ -70,7 +128,6 @@ function consumeItem(id, amount) {
     return false;
 }
 
-// 作業台が近くにあるかチェックする関数
 function checkWorkbench() {
     isNearWorkbench = false;
     let pCol = Math.floor((player.x + player.width/2) / TILE_SIZE);
@@ -78,30 +135,22 @@ function checkWorkbench() {
     for (let dr = -2; dr <= 2; dr++) {
         for (let dc = -2; dc <= 2; dc++) {
             let r = pRow + dr, c = pCol + dc;
-            if (r >= 0 && r < WORLD_ROWS && c >= 0 && c < WORLD_COLS) {
-                if (world[r][c] === 12) isNearWorkbench = true;
-            }
+            if (r >= 0 && r < WORLD_ROWS && c >= 0 && c < WORLD_COLS) if (world[r][c] === 12) isNearWorkbench = true;
         }
     }
-    // 表示するレシピを更新
     visibleRecipes = RECIPES.filter(r => !r.requiresWorkbench || isNearWorkbench);
-    craftScrollY = 0; // スクロール位置リセット
+    craftScrollY = 0;
 }
 
 // --- イベント ---
 window.addEventListener("keydown", (e) => {
     if (e.key === "e" || e.key === "E") {
         showInventory = !showInventory;
-        if (showInventory) {
-            checkWorkbench(); // インベントリを開いたときに作業台をチェック
-        } else if (cursorItem.count > 0) {
-            addToInventory(cursorItem.id, cursorItem.count);
-            cursorItem = { id: 0, count: 0 };
-        }
-        isMining = false;
-        return;
+        if (showInventory) checkWorkbench();
+        else if (cursorItem.count > 0) { addToInventory(cursorItem.id, cursorItem.count); cursorItem = { id: 0, count: 0 }; }
+        isMining = false; return;
     }
-    if (e.key === "T") { debugMode = !debugMode; e.preventDefault(); }
+    if (e.key === "F3") { debugMode = !debugMode; e.preventDefault(); }
     
     if (!showInventory) {
         if (e.key === "a" || e.key === "A") keys.a = true;
@@ -120,9 +169,7 @@ window.addEventListener("keyup", (e) => {
 });
 
 canvas.addEventListener("mousemove", (e) => {
-    const rect = canvas.getBoundingClientRect();
-    rawMouseX = e.clientX - rect.left;
-    rawMouseY = e.clientY - rect.top;
+    const rect = canvas.getBoundingClientRect(); rawMouseX = e.clientX - rect.left; rawMouseY = e.clientY - rect.top;
 });
 
 canvas.addEventListener("wheel", (e) => {
@@ -140,8 +187,7 @@ canvas.addEventListener("mousedown", (e) => {
         const invStartX = 20, invStartY = 40;
         if (rawMouseX >= invStartX && rawMouseX <= invStartX + 9 * 50 && rawMouseY >= invStartY && rawMouseY <= invStartY + 4 * 50) {
             let col = Math.floor((rawMouseX - invStartX) / 50), row = Math.floor((rawMouseY - invStartY) / 50);
-            let idx = row * 9 + col;
-            let temp = { ...inventory[idx] }; inventory[idx] = { ...cursorItem }; cursorItem = temp;
+            let temp = { ...inventory[row * 9 + col] }; inventory[row * 9 + col] = { ...cursorItem }; cursorItem = temp;
             return;
         }
 
@@ -154,9 +200,7 @@ canvas.addEventListener("mousedown", (e) => {
 
         const craftStartX = 20, craftStartY = 280, craftAreaHeight = 200;
         if (rawMouseX >= craftStartX && rawMouseX <= craftStartX + 300 && rawMouseY >= craftStartY && rawMouseY <= craftStartY + craftAreaHeight) {
-            let clickY = rawMouseY - craftStartY + craftScrollY;
-            let recipeIdx = Math.floor(clickY / 60);
-            
+            let recipeIdx = Math.floor((rawMouseY - craftStartY + craftScrollY) / 60);
             if (recipeIdx >= 0 && recipeIdx < visibleRecipes.length) {
                 let recipe = visibleRecipes[recipeIdx];
                 let canCraft = true;
@@ -178,17 +222,19 @@ canvas.addEventListener("mousedown", (e) => {
             isMining = true; miningTarget = { col: c, row: r }; miningProgress = 0;
         } else if (water[r][c] > 0.1) {
             water[r][c] = 0; addToInventory(7, 1);
+            needsLightUpdate = true; // 水を汲んだら光を更新
         }
     } else if (e.button === 2 && !targetTile.isBlock) { 
         const slot = hotbar[selectedSlot];
         if (slot.id === 7 && slot.count > 0) {
             water[r][c] = Math.min(1.0, water[r][c] + 1.0);
             slot.count--; if(slot.count === 0) slot.id = 0;
+            needsLightUpdate = true; // 水を置いたら光を更新
         } else if (slot.id !== 0 && slot.count > 0 && !isCollidingWithPlayer(c, r)) {
-            // アイテム（ID100以上）はブロックとして置けないようにする
             if (BLOCKS[slot.id]) {
                 world[r][c] = slot.id; water[r][c] = 0; 
                 slot.count--; if(slot.count === 0) slot.id = 0;
+                needsLightUpdate = true; // ブロックを置いたら光を更新
             }
         }
     }
@@ -268,14 +314,13 @@ for (let c = 5; c < WORLD_COLS - 5; c++) {
     }
 }
 
-// 鉱石の生成（石の中にランダムに配置）
 for (let r = 0; r < WORLD_ROWS; r++) {
     for (let c = 0; c < WORLD_COLS; c++) {
         if (world[r][c] === 8) { 
             let depth = r - surfaceLevels[c];
-            if (depth > 5 && Math.random() < 0.05) world[r][c] = 9;       // 石炭
-            else if (depth > 15 && Math.random() < 0.03) world[r][c] = 10; // 鉄
-            else if (depth > 30 && Math.random() < 0.01) world[r][c] = 11; // 金
+            if (depth > 5 && Math.random() < 0.05) world[r][c] = 9;
+            else if (depth > 15 && Math.random() < 0.03) world[r][c] = 10;
+            else if (depth > 30 && Math.random() < 0.01) world[r][c] = 11;
         }
     }
 }
@@ -319,6 +364,7 @@ let frameCount = 0;
 let scanDirection = 1;
 
 function updateFluids() {
+    let moved = false;
     scanDirection *= -1; 
     for (let r = WORLD_ROWS - 2; r >= 0; r--) {
         const start = scanDirection === 1 ? 0 : WORLD_COLS - 1, end = scanDirection === 1 ? WORLD_COLS : -1, step = scanDirection === 1 ? 1 : -1;
@@ -326,22 +372,33 @@ function updateFluids() {
             if (water[r][c] <= 0) continue;
             if (world[r + 1][c] === 0) {
                 let free = 1.0 - water[r + 1][c];
-                if (free > 0) { let flow = Math.min(water[r][c], free); water[r][c] -= flow; water[r + 1][c] += flow; }
+                if (free > 0) { let flow = Math.min(water[r][c], free); water[r][c] -= flow; water[r + 1][c] += flow; moved = true; }
             }
             if (water[r][c] <= 0.005) continue;
             let c1 = c + step, c2 = c - step;
             if (c1 >= 0 && c1 < WORLD_COLS && world[r][c1] === 0 && water[r][c] > water[r][c1]) {
-                let flow = (water[r][c] - water[r][c1]) / 2; water[r][c] -= flow; water[r][c1] += flow;
+                let flow = (water[r][c] - water[r][c1]) / 2; water[r][c] -= flow; water[r][c1] += flow; moved = true;
             }
             if (c2 >= 0 && c2 < WORLD_COLS && world[r][c2] === 0 && water[r][c] > water[r][c2]) {
-                let flow = (water[r][c] - water[r][c2]) / 2; water[r][c] -= flow; water[r][c2] += flow;
+                let flow = (water[r][c] - water[r][c2]) / 2; water[r][c] -= flow; water[r][c2] += flow; moved = true;
             }
         }
     }
-    for (let r = 0; r < WORLD_ROWS; r++) for (let c = 0; c < WORLD_COLS; c++) if (water[r][c] > 0 && water[r][c] < 0.02) water[r][c] = 0;
+    for (let r = 0; r < WORLD_ROWS; r++) {
+        for (let c = 0; c < WORLD_COLS; c++) {
+            if (water[r][c] > 0 && water[r][c] < 0.02) { water[r][c] = 0; moved = true; }
+        }
+    }
+    if (moved) needsLightUpdate = true; // 水が動いたら光を更新
 }
 
 function update() {
+    // 必要な場合のみ光を計算
+    if (needsLightUpdate) {
+        updateLighting();
+        needsLightUpdate = false;
+    }
+
     frameCount++; if (frameCount % 10 === 0) updateFluids();
     if (showInventory) return;
 
@@ -390,10 +447,8 @@ function update() {
         } else {
             const blockId = world[miningTarget.row][miningTarget.col];
             const targetHardness = BLOCKS[blockId] ? BLOCKS[blockId].hardness : 10;
-            
-            // ツールによる採掘力の計算
             const activeItem = hotbar[selectedSlot].id;
-            let minePower = 1; // 素手の基本パワー
+            let minePower = 1;
             if (ITEMS[activeItem]) minePower = ITEMS[activeItem].power;
 
             miningProgress += debugMode ? targetHardness : minePower;
@@ -402,6 +457,7 @@ function update() {
                 addToInventory(blockId, 1);
                 world[miningTarget.row][miningTarget.col] = 0;
                 isMining = false; miningProgress = 0; miningTarget = null;
+                needsLightUpdate = true; // ブロックを壊したら光を更新
             }
         }
     }
@@ -420,10 +476,8 @@ function drawSlot(ctx, x, y, item, isSelected = false) {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(-camera.x, -camera.y);
 
-    const startCol = Math.max(0, Math.floor(camera.x / TILE_SIZE));
-    const endCol = Math.min(WORLD_COLS, startCol + Math.ceil(canvas.width / TILE_SIZE) + 1);
-    const startRow = Math.max(0, Math.floor(camera.y / TILE_SIZE));
-    const endRow = Math.min(WORLD_ROWS, startRow + Math.ceil(canvas.height / TILE_SIZE) + 1);
+    const startCol = Math.max(0, Math.floor(camera.x / TILE_SIZE)), endCol = Math.min(WORLD_COLS, startCol + Math.ceil(canvas.width / TILE_SIZE) + 1);
+    const startRow = Math.max(0, Math.floor(camera.y / TILE_SIZE)), endRow = Math.min(WORLD_ROWS, startRow + Math.ceil(canvas.height / TILE_SIZE) + 1);
 
     const maxLightRadius = 6;
     const torchStartCol = Math.max(0, startCol - maxLightRadius);
@@ -433,11 +487,7 @@ function draw() {
 
     const torches = [];
     if (!debugMode) {
-        for (let r = torchStartRow; r < torchEndRow; r++) {
-            for (let c = torchStartCol; c < torchEndCol; c++) {
-                if (world[r][c] === 5) torches.push({ r: r, c: c, intensity: maxLightRadius });
-            }
-        }
+        for (let r = torchStartRow; r < torchEndRow; r++) for (let c = torchStartCol; c < torchEndCol; c++) if (world[r][c] === 5) torches.push({ r: r, c: c, intensity: maxLightRadius });
         torches.push({ r: Math.floor((player.y + player.height/2) / TILE_SIZE), c: Math.floor((player.x + player.width/2) / TILE_SIZE), intensity: 3 });
     }
 
@@ -446,11 +496,7 @@ function draw() {
             const tile = world[r][c]; const liquidLevel = water[r][c];
             if (tile !== 0) {
                 ctx.fillStyle = getItemColor(tile); ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                // 作業台の場合は少し模様を描画
-                if (tile === 12) {
-                    ctx.fillStyle = "rgba(0,0,0,0.3)";
-                    ctx.fillRect(c * TILE_SIZE + 5, r * TILE_SIZE + 5, TILE_SIZE - 10, TILE_SIZE - 10);
-                }
+                if (tile === 12) { ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillRect(c * TILE_SIZE + 5, r * TILE_SIZE + 5, TILE_SIZE - 10, TILE_SIZE - 10); }
                 ctx.strokeStyle = "rgba(0,0,0,0.2)"; ctx.strokeRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                 if (!debugMode && miningTarget && miningTarget.row === r && miningTarget.col === c) {
                     const ratio = miningProgress / (BLOCKS[tile] ? BLOCKS[tile].hardness : 10);
@@ -461,14 +507,23 @@ function draw() {
                 if (r > 0 && water[r - 1][c] > 0) { h = TILE_SIZE; yOffset = 0; }
                 ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE + yOffset, TILE_SIZE, h);
             }
+            
             if (!debugMode) {
-                let depth = r - surfaceLevels[c], baseDarkness = depth > 0 ? Math.min(0.95, depth * 0.15) : 0, lightEffect = 0;
+                // 【変更箇所】新しい lightMap をベースに影を計算
+                let depthDarkness = 1.0 - (lightMap[r][c] / 15.0);
+                let baseDarkness = Math.min(0.95, Math.max(0, depthDarkness));
+                
+                let lightEffect = 0;
                 for (let t of torches) {
                     let dist = Math.sqrt(Math.pow(r - t.r, 2) + Math.pow(c - t.c, 2));
                     if (dist < t.intensity) lightEffect += 1 - (dist / t.intensity);
                 }
+                
                 let finalDarkness = Math.max(0, Math.min(0.95, baseDarkness - lightEffect));
-                if (finalDarkness > 0) { ctx.fillStyle = `rgba(0, 0, 0, ${finalDarkness})`; ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE); }
+                if (finalDarkness > 0) { 
+                    ctx.fillStyle = `rgba(0, 0, 0, ${finalDarkness})`; 
+                    ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE); 
+                }
             }
         }
     }

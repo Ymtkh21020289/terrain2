@@ -37,6 +37,13 @@ const lightMap = Array.from({length: WORLD_ROWS}, () => new Uint8Array(WORLD_COL
 const lightQueue = new Int16Array(500000); // 処理速度アップのための専用キュー
 let needsLightUpdate = true; // 光の再計算フラグ
 
+// --- ブロックの透過判定ヘルパー ---
+function isTransparent(blockId) {
+    if (blockId === 0) return true; // 空気は透過
+    if (blockId === 4 || blockId === 5) return true; // 葉っぱ(4)と松明(5)は透過
+    return false;
+}
+
 function updateLighting() {
     let head = 0;
     let tail = 0;
@@ -48,23 +55,25 @@ function updateLighting() {
         }
     }
     
-    // 1. 真上からの太陽光を計算
+    // 1. 真上からの太陽光（スカイライト）の計算
     for (let c = 0; c < WORLD_COLS; c++) {
         for (let r = 0; r < WORLD_ROWS; r++) {
-            if (world[r][c] === 0 || water[r][c] > 0) {
-                lightMap[r][c] = 15; // 太陽光の最大値
-                lightQueue[tail++] = r;
-                lightQueue[tail++] = c;
-            } else {
-                lightMap[r][c] = 15; // 地表のブロックそのものも明るくする
-                lightQueue[tail++] = r;
-                lightQueue[tail++] = c;
-                break; // ブロックにぶつかったら直射日光はストップ
+            const blockId = world[r][c];
+            const hasWater = water[r][c] > 0;
+
+            // 太陽光をセット
+            lightMap[r][c] = 15; 
+            lightQueue[tail++] = r;
+            lightQueue[tail++] = c;
+
+            // 【重要】不透過ブロック（土、石、木など）に当たったら、直射日光はそこでストップ
+            if (!isTransparent(blockId)) {
+                break; 
             }
         }
     }
     
-    // 2. 光を周囲に拡散させる（横穴などの計算）
+    // 2. 光を周囲に拡散させる（横方向や洞窟内への広がり）
     while(head < tail) {
         let r = lightQueue[head++];
         let c = lightQueue[head++];
@@ -75,12 +84,18 @@ function updateLighting() {
         for (let [dr, dc] of dirs) {
             let nr = r + dr, nc = c + dc;
             if (nr >= 0 && nr < WORLD_ROWS && nc >= 0 && nc < WORLD_COLS) {
-                let isSolid = world[nr][nc] !== 0;
-                let isWater = water[nr][nc] > 0;
-                // 空気は-1、水は-2、ブロックは-3 ずつ光が減衰する
-                let decrease = isSolid ? 3 : (isWater ? 2 : 1);
-                let nLight = currentLight - decrease;
+                const targetBlockId = world[nr][nc];
+                const isWater = water[nr][nc] > 0;
                 
+                // --- 減衰率の決定 ---
+                let decrease = 1; // 基本（空気や透過ブロック）は -1
+                if (isWater) {
+                    decrease = 2; // 水の中は少し暗くなりやすい
+                } else if (!isTransparent(targetBlockId)) {
+                    decrease = 3; // 不透過ブロックの中は急激に暗くなる
+                }
+                
+                let nLight = currentLight - decrease;
                 if (nLight > lightMap[nr][nc]) {
                     lightMap[nr][nc] = nLight;
                     lightQueue[tail++] = nr;
@@ -90,7 +105,6 @@ function updateLighting() {
         }
     }
 }
-
 // --- インベントリ管理関数 ---
 function addToInventory(id, amount) {
     for(let i = 0; i < 9; i++) if(hotbar[i].id === id) { hotbar[i].count += amount; return; }

@@ -1,6 +1,6 @@
 // --- ブロックデータ ---
 const BLOCKS = {
-    0:  { name: "Air", color: null, hardness: 0 },
+    0:  { name: "Air", jp_name:null, color: null, hardness: 0 },
     1:  { name: "Grass", jp_name:"草", color: "#2ecc71", hardness: 15 },
     2:  { name: "Dirt", jp_name:"土", color: "#8e44ad", hardness: 20 },
     3:  { name: "Log", jp_name:"原木", color: "#8D6E63", hardness: 45 },

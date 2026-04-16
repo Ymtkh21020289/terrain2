@@ -677,5 +677,5 @@ function loop() { update(); draw(); requestAnimationFrame(loop); }
 loop();
 
 function getItemName(id) {
-    return names[id].jp_name || `アイテム (${id})`;
+    return ITEMS[id].jp_name || `アイテム (${id})`;
 }

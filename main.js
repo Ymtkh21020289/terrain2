@@ -609,7 +609,7 @@ function draw() {
             ctx.textAlign = "center";
             // 見やすいように薄く影をつける
             ctx.shadowColor = "rgba(0, 0, 0, 0.8)"; ctx.shadowBlur = 4;
-            ctx.fillText(selectedItem.jp.name, canvas.width / 2, hbStartY - 15);
+            ctx.fillText(selectedItem.jp_name, canvas.width / 2, hbStartY - 15);
             ctx.shadowBlur = 0; ctx.textAlign = "left"; // 設定をリセット
         }
     }

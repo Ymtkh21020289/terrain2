@@ -1,18 +1,18 @@
 // --- ブロックデータ ---
 const BLOCKS = {
     0:  { name: "Air", color: null, hardness: 0 },
-    1:  { name: "Grass", color: "#2ecc71", hardness: 15 },
-    2:  { name: "Dirt", color: "#8e44ad", hardness: 20 },
-    3:  { name: "Log", color: "#8D6E63", hardness: 45 },
-    4:  { name: "Leaves", color: "#27ae60", hardness: 5 },
-    5:  { name: "Torch", color: "#f39c12", hardness: 5 },
-    6:  { name: "Planks", color: "#e67e22", hardness: 30 },
-    7:  { name: "Water", color: "#3498db", hardness: 0 },
-    8:  { name: "Stone", color: "#7f8c8d", hardness: 60 },
-    9:  { name: "Coal Ore", color: "#2c3e50", hardness: 70 }, // 石炭（黒灰色）
-    10: { name: "Iron Ore", color: "#d1ccc0", hardness: 90 }, // 鉄（薄灰色）
-    11: { name: "Gold Ore", color: "#f1c40f", hardness: 90 }, // 金（黄色）
-    12: { name: "Crafting Table", color: "#d35400", hardness: 30 } // 作業台（濃いオレンジ）
+    1:  { name: "Grass", jp_name:"草", color: "#2ecc71", hardness: 15 },
+    2:  { name: "Dirt", jp_name:"土", color: "#8e44ad", hardness: 20 },
+    3:  { name: "Log", jp_name:"原木", color: "#8D6E63", hardness: 45 },
+    4:  { name: "Leaves", jp_name:"葉", color: "#27ae60", hardness: 5 },
+    5:  { name: "Torch", jp_name:"松明", color: "#f39c12", hardness: 5 },
+    6:  { name: "Planks", jp_name:"板材", color: "#e67e22", hardness: 30 },
+    7:  { name: "Water", jp_name:"水", color: "#3498db", hardness: 0 },
+    8:  { name: "Stone", jp_name:"石", color: "#7f8c8d", hardness: 60 },
+    9:  { name: "Coal Ore", jp_name:"石炭鉱石", color: "#2c3e50", hardness: 70 }, // 石炭（黒灰色）
+    10: { name: "Iron Ore", jp_name:"鉄鉱石", color: "#d1ccc0", hardness: 90 }, // 鉄（薄灰色）
+    11: { name: "Gold Ore", jp_name:"金鉱石", color: "#f1c40f", hardness: 90 }, // 金（黄色）
+    12: { name: "Crafting Table", jp_name:"作業台", color: "#d35400", hardness: 30 } // 作業台（濃いオレンジ）
 };
 
 // --- アイテム（ツールなど）データ ---

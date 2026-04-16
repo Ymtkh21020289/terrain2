@@ -17,9 +17,9 @@ const BLOCKS = {
 
 // --- アイテム（ツールなど）データ ---
 const ITEMS = {
-    101: { name: "Wooden Pickaxe", color: "#a0522d", power: 2 },
-    102: { name: "Stone Pickaxe", color: "#95a5a6", power: 5 },
-    103: { name: "Iron Pickaxe", color: "#bdc3c7", power: 10 }
+    101: { name: "Wooden Pickaxe", jp_name:"木のピッケル", color: "#a0522d", power: 2 },
+    102: { name: "Stone Pickaxe", jp_name:"石のピッケル", color: "#95a5a6", power: 5 },
+    103: { name: "Iron Pickaxe", jp_name:"鉄のピッケル", color: "#bdc3c7", power: 10 }
 };
 
 // 描画用の色取得ヘルパー関数

@@ -609,20 +609,20 @@ function draw() {
             ctx.textAlign = "center";
             // 見やすいように薄く影をつける
             ctx.shadowColor = "rgba(0, 0, 0, 0.8)"; ctx.shadowBlur = 4;
-            ctx.fillText(selectedItem.jp_name, canvas.width / 2, hbStartY - 15);
+            ctx.fillText(getItemName(selectedItem.id), canvas.width / 2, hbStartY - 15);
             ctx.shadowBlur = 0; ctx.textAlign = "left"; // 設定をリセット
         }
     }
-    
+
     // ② マウスカーソルが乗っているアイテムの名前を判定
     // ホットバーのホバー判定
     for (let i = 0; i < 9; i++) {
         let slotX = hbStartX + i * 50;
         if (rawMouseX >= slotX && rawMouseX <= slotX + 45 && rawMouseY >= hbStartY && rawMouseY <= hbStartY + 45) {
-            if (hotbar[i].id !== 0) hoverText = hotbar[i].jp_name;
+            if (hotbar[i].id !== 0) hoverText = getItemName(hotbar[i].id);
         }
     }
-    
+
     if (showInventory) {
         // インベントリのホバー判定
         const invStartX = 20, invStartY = 40;
@@ -631,7 +631,7 @@ function draw() {
                 let slotX = invStartX + c * 50, slotY = invStartY + r * 50;
                 if (rawMouseX >= slotX && rawMouseX <= slotX + 45 && rawMouseY >= slotY && rawMouseY <= slotY + 45) {
                     let item = inventory[r * 9 + c];
-                    if (item.id !== 0) hoverText = item.jp_name;
+                    if (item.id !== 0) hoverText = getItemName(item.id);
                 }
             }
         }
@@ -644,12 +644,12 @@ function draw() {
                 let y = craftStartY + recipeIdx * 60 - craftScrollY;
                 // 完成品アイコンの描画エリア（craftStartX + 10, y + 10 からの 30x30 サイズ）にカーソルがあるか
                 if (rawMouseX >= craftStartX + 10 && rawMouseX <= craftStartX + 40 && rawMouseY >= y + 10 && rawMouseY <= y + 40) {
-                    hoverText = visibleRecipes[recipeIdx].result.jp_name;
+                    hoverText = getItemName(visibleRecipes[recipeIdx].result.id);
                 }
             }
         }
     }
-    
+
     // ③ ツールチップの描画（マウスにアイテムを掴んでいない時のみ表示）
     if (hoverText && cursorItem.count === 0) {
         ctx.font = "14px sans-serif";
@@ -661,7 +661,7 @@ function draw() {
         // 白枠線
         ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
         ctx.strokeRect(rawMouseX + 15, rawMouseY + 15, textWidth + 16, 26);
-            
+        
         // テキスト
         ctx.fillStyle = "white";
         ctx.fillText(hoverText, rawMouseX + 23, rawMouseY + 33);
@@ -675,3 +675,7 @@ function draw() {
 
 function loop() { update(); draw(); requestAnimationFrame(loop); }
 loop();
+
+function getItemName(id) {
+    return names[id].jp_name || `アイテム (${id})`;
+}

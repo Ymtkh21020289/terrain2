@@ -211,74 +211,6 @@ canvas.addEventListener("mousedown", (e) => {
             let temp = { ...hotbar[col] }; hotbar[col] = { ...cursorItem }; cursorItem = temp;
             return;
         }
-        let hoverText = null;
-
-        // ① インベントリを閉じている時：選択中のアイテム名をホットバーの上に表示
-        if (!showInventory) {
-            let selectedItem = hotbar[selectedSlot];
-            if (selectedItem && selectedItem.id !== 0) {
-                ctx.fillStyle = "white";
-                ctx.font = "bold 18px sans-serif";
-                ctx.textAlign = "center";
-                // 見やすいように薄く影をつける
-                ctx.shadowColor = "rgba(0, 0, 0, 0.8)"; ctx.shadowBlur = 4;
-                ctx.fillText(selectedItem.jp.name, canvas.width / 2, hbStartY - 15);
-                ctx.shadowBlur = 0; ctx.textAlign = "left"; // 設定をリセット
-            }
-        }
-    
-        // ② マウスカーソルが乗っているアイテムの名前を判定
-        // ホットバーのホバー判定
-        for (let i = 0; i < 9; i++) {
-            let slotX = hbStartX + i * 50;
-            if (rawMouseX >= slotX && rawMouseX <= slotX + 45 && rawMouseY >= hbStartY && rawMouseY <= hbStartY + 45) {
-                if (hotbar[i].id !== 0) hoverText = hotbar[i].jp_name;
-            }
-        }
-    
-        if (showInventory) {
-            // インベントリのホバー判定
-            const invStartX = 20, invStartY = 40;
-            for (let r = 0; r < 4; r++) {
-                for (let c = 0; c < 9; c++) {
-                    let slotX = invStartX + c * 50, slotY = invStartY + r * 50;
-                    if (rawMouseX >= slotX && rawMouseX <= slotX + 45 && rawMouseY >= slotY && rawMouseY <= slotY + 45) {
-                        let item = inventory[r * 9 + c];
-                        if (item.id !== 0) hoverText = item.jp_name;
-                    }
-                }
-            }
-    
-            // クラフト画面の完成品のホバー判定
-            const craftStartX = 20, craftStartY = 280, craftAreaHeight = 200;
-            if (rawMouseX >= craftStartX && rawMouseX <= craftStartX + 300 && rawMouseY >= craftStartY && rawMouseY <= craftStartY + craftAreaHeight) {
-                let recipeIdx = Math.floor((rawMouseY - craftStartY + craftScrollY) / 60);
-                if (recipeIdx >= 0 && recipeIdx < visibleRecipes.length) {
-                    let y = craftStartY + recipeIdx * 60 - craftScrollY;
-                    // 完成品アイコンの描画エリア（craftStartX + 10, y + 10 からの 30x30 サイズ）にカーソルがあるか
-                    if (rawMouseX >= craftStartX + 10 && rawMouseX <= craftStartX + 40 && rawMouseY >= y + 10 && rawMouseY <= y + 40) {
-                        hoverText = visibleRecipes[recipeIdx].result.jp_name;
-                    }
-                }
-            }
-        }
-    
-        // ③ ツールチップの描画（マウスにアイテムを掴んでいない時のみ表示）
-        if (hoverText && cursorItem.count === 0) {
-            ctx.font = "14px sans-serif";
-            let textWidth = ctx.measureText(hoverText).width;
-            
-            // 背景の黒い半透明ボックス
-            ctx.fillStyle = "rgba(16, 16, 20, 0.9)";
-            ctx.fillRect(rawMouseX + 15, rawMouseY + 15, textWidth + 16, 26);
-            // 白枠線
-            ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-            ctx.strokeRect(rawMouseX + 15, rawMouseY + 15, textWidth + 16, 26);
-            
-            // テキスト
-            ctx.fillStyle = "white";
-            ctx.fillText(hoverText, rawMouseX + 23, rawMouseY + 33);
-        }
 
         const craftStartX = 20, craftStartY = 280, craftAreaHeight = 200;
         if (rawMouseX >= craftStartX && rawMouseX <= craftStartX + 300 && rawMouseY >= craftStartY && rawMouseY <= craftStartY + craftAreaHeight) {
@@ -664,6 +596,75 @@ function draw() {
         if (!showInventory) {
             ctx.fillStyle = "rgba(255, 255, 255, 0.5)"; ctx.font = "10px sans-serif"; ctx.fillText(i + 1, hbStartX + i * 50 + 3, hbStartY + 12);
         }
+    }
+
+    let hoverText = null;
+
+    // ① インベントリを閉じている時：選択中のアイテム名をホットバーの上に表示
+    if (!showInventory) {
+        let selectedItem = hotbar[selectedSlot];
+        if (selectedItem && selectedItem.id !== 0) {
+            ctx.fillStyle = "white";
+            ctx.font = "bold 18px sans-serif";
+            ctx.textAlign = "center";
+            // 見やすいように薄く影をつける
+            ctx.shadowColor = "rgba(0, 0, 0, 0.8)"; ctx.shadowBlur = 4;
+            ctx.fillText(selectedItem.jp.name, canvas.width / 2, hbStartY - 15);
+            ctx.shadowBlur = 0; ctx.textAlign = "left"; // 設定をリセット
+        }
+    }
+    
+    // ② マウスカーソルが乗っているアイテムの名前を判定
+    // ホットバーのホバー判定
+    for (let i = 0; i < 9; i++) {
+        let slotX = hbStartX + i * 50;
+        if (rawMouseX >= slotX && rawMouseX <= slotX + 45 && rawMouseY >= hbStartY && rawMouseY <= hbStartY + 45) {
+            if (hotbar[i].id !== 0) hoverText = hotbar[i].jp_name;
+        }
+    }
+    
+    if (showInventory) {
+        // インベントリのホバー判定
+        const invStartX = 20, invStartY = 40;
+        for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 9; c++) {
+                let slotX = invStartX + c * 50, slotY = invStartY + r * 50;
+                if (rawMouseX >= slotX && rawMouseX <= slotX + 45 && rawMouseY >= slotY && rawMouseY <= slotY + 45) {
+                    let item = inventory[r * 9 + c];
+                    if (item.id !== 0) hoverText = item.jp_name;
+                }
+            }
+        }
+
+        // クラフト画面の完成品のホバー判定
+        const craftStartX = 20, craftStartY = 280, craftAreaHeight = 200;
+        if (rawMouseX >= craftStartX && rawMouseX <= craftStartX + 300 && rawMouseY >= craftStartY && rawMouseY <= craftStartY + craftAreaHeight) {
+            let recipeIdx = Math.floor((rawMouseY - craftStartY + craftScrollY) / 60);
+            if (recipeIdx >= 0 && recipeIdx < visibleRecipes.length) {
+                let y = craftStartY + recipeIdx * 60 - craftScrollY;
+                // 完成品アイコンの描画エリア（craftStartX + 10, y + 10 からの 30x30 サイズ）にカーソルがあるか
+                if (rawMouseX >= craftStartX + 10 && rawMouseX <= craftStartX + 40 && rawMouseY >= y + 10 && rawMouseY <= y + 40) {
+                    hoverText = visibleRecipes[recipeIdx].result.jp_name;
+                }
+            }
+        }
+    }
+    
+    // ③ ツールチップの描画（マウスにアイテムを掴んでいない時のみ表示）
+    if (hoverText && cursorItem.count === 0) {
+        ctx.font = "14px sans-serif";
+        let textWidth = ctx.measureText(hoverText).width;
+        
+        // 背景の黒い半透明ボックス
+        ctx.fillStyle = "rgba(16, 16, 20, 0.9)";
+        ctx.fillRect(rawMouseX + 15, rawMouseY + 15, textWidth + 16, 26);
+        // 白枠線
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+        ctx.strokeRect(rawMouseX + 15, rawMouseY + 15, textWidth + 16, 26);
+            
+        // テキスト
+        ctx.fillStyle = "white";
+        ctx.fillText(hoverText, rawMouseX + 23, rawMouseY + 33);
     }
 
     if (showInventory && cursorItem.count > 0) {

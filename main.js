@@ -677,5 +677,10 @@ function loop() { update(); draw(); requestAnimationFrame(loop); }
 loop();
 
 function getItemName(id) {
-    return ITEMS[id].jp_name || `アイテム (${id})`;
+    const block =  BLOCKS[id]
+    if (block){
+        return block.jp_name || `アイテム (${id})`;
+    } else {
+        return block.jp_name
+    }
 }

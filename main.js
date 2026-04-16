@@ -8,8 +8,8 @@ const REACH = TILE_SIZE * 5;
 
 // --- インベントリ関連 ---
 const hotbar = [
-    { id: 1, count: 0 }, { id: 2, count: 0 }, { id: 3, count: 0 },
-    { id: 4, count: 0 }, { id: 5, count: 0 }, { id: 6, count: 0 },
+    { id: 0, count: 0 }, { id: 0, count: 0 }, { id: 0, count: 0 },
+    { id: 0, count: 0 }, { id: 0, count: 0 }, { id: 0, count: 0 },
     { id: 7, count: 50 }, { id: 0, count: 0 }, { id: 0, count: 0 }
 ];
 const inventory = Array.from({ length: 36 }, () => ({ id: 0, count: 0 }));
